@@ -1,0 +1,6 @@
+login.cx3.hpc.imperial.ac.uk
+tmux 
+qsub -I -l select=1:ncpus=8:mem=64gb -l walltime=08:00:00
+
+ai-agent 
+trae-helper
