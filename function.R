@@ -10,3 +10,22 @@ files_for_year <- function(files, year) {
   matches <- grepl(yr, basename(files))
   files[matches]
 }
+
+make_map <- function(r, code, unit) {
+  # Check if log10 is safe (all values > 0)
+  rng <- terra::global(r, range, na.rm = TRUE)
+  use_log <- is.finite(rng[1,1]) && rng[1,1] > 0
+  
+  ggplot() +
+    geom_spatraster(data = r) +
+    scale_fill_viridis_c(
+      option = "magma",
+      trans  = if (use_log) "log10" else "identity",
+      name   = if (use_log) bquote(.(code) ~ log[10]*"("*.(unit)*")") else paste0(code, " (", unit, ")"),
+      na.value = "transparent"
+      # labels = label_number(accuracy = 1)
+    ) 
+    # coord_equal() +
+    # theme_minimal() +
+    # theme(panel.grid = element_blank())
+}
