@@ -27,9 +27,6 @@ if(FALSE){
     full.names = TRUE
   )
   
-
-
-  
   qdeg_files <- tif_files[grepl("GeoTIFF_Qdeg_monthly_summaries", tif_files)]
   qdeg_2021  <- files_for_year(qdeg_files, 2021)
   
@@ -141,8 +138,6 @@ for (code in names(rasters)) {
     width = 7, height = 7, dpi = 300
   )
 }
-
-
 
 
 # radon -------------------------------------------------------------------
