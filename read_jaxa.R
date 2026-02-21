@@ -95,18 +95,21 @@ read_product <- function(path,
 
 # Choose grid:
 # GLI:
-nl <- 7200; ml <- 3601
+nl <- 3601
+ml <- 7200
 # MODIS / SeaWiFS:
 # nl <- 1440; ml <- 721
 
-path <- "./data/jaxa_swr/2000/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le"
+path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
 
 # PAR example (scale 0.01):
-out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian = "little")
+out <- read_product(path, nl, ml, data_scale = 0.02, data_offset = 0.0, endian = "little")
 
 # If you want SWR instead:
 # GLI uses 0.02; MODIS/SeaWiFS uses 0.01
-swr_gli <- out$raw * 0.02 + 0.0
+
+# modis_param <- 0.02
+# swr_gli <- out$raw * modis_param + 0.0
 
 # Printing every pixel is enormous; here’s how to inspect a few:
 cat("Header para:", out$header$para, "\n")
