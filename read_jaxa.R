@@ -93,17 +93,28 @@ read_product <- function(path,
 
 # ---------------- Example usage ----------------
 
-# Choose grid:
-# GLI:
-nl <- 3601
-ml <- 7200
+
+
+# MYD: Aqua MODIS, MOD: Terra MODIS
+# - Data size:
+# MODIS: 2880byte header + 2byte x 1440(pixel) x 721(line)
+# - Grid:
+# MODIS: upper-left grid location (grid center): 90N, 0E;  grid interbal: 0.25 deg
 # MODIS / SeaWiFS:
+# swr__le : daily mean shortwave radiation [W/m^2] = DN * 0.10000E-01
 # nl <- 1440; ml <- 721
 
 path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
+# nl <- 3601; ml <- 7200
+# Choose grid:
+# SWR:
+nl <- 3601
+ml <- 7200
+
 
 # PAR example (scale 0.01):
-out <- read_product(path, nl, ml, data_scale = 0.02, data_offset = 0.0, endian = "little")
+# or swr=i2buf(n,m)*0.01+0.0 (MODIS and SeaWiFS)
+out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian = "little")
 
 # If you want SWR instead:
 # GLI uses 0.02; MODIS/SeaWiFS uses 0.01
@@ -116,4 +127,32 @@ cat("Header para:", out$header$para, "\n")
 cat("PAR sample [n=1..5, m=1]:\n")
 print(out$par[1:5, 1])
 cat("SWR (GLI) sample [n=1..5, m=1]:\n")
-print(swr_gli[1:5, 1])
+print(out$par[1:5, 1])
+
+
+swr <- out$par
+d <- 0.25
+lon <- 0 + (0:(nl-1)) * d          # 0, 0.25, ..., 359.75   (centers)
+lat <- 90 - (0:(ml-1)) * d         # 90, 89.75, ..., -90   (centers)
+
+# swr must be [ml x nl], row 1 = 90N, col 1 = 0E
+r <- rast(
+  nrows = ml, ncols = nl,
+  xmin = -180 - d/2, xmax = 180 - d/2,
+  ymax = 90 + d/2, ymin = -90 + d/2,
+  # xmin = min(lon) - d/2, xmax = max(lon) + d/2,
+  # ymax = max(lat) + d/2, ymin = min(lat) - d/2,
+  crs = "EPSG:4326"
+)
+
+library(sf)
+world <- st_read("./data/World_Countries_(Generalized)_-573431906301700955/World_Countries_Generalized.shp") %>% st_transform(crs = st_crs(r))
+
+# Fill values; terra stores from top row to bottom row, which matches lat=90..-90
+values(r) <- as.vector(swr)   # note: t() to go row-by-row into the raster
+ggplot() + geom_spatraster(data = r) + geom_sf(data = world, fill = NA, color = "black", size = 0.1) +
+  scale_fill_viridis_c(option = "C")
+ggsave("./outputs/swr_modis.pdf")
+ggsave("./outputs/swr_modis.png")
+
+plot(r, col = hcl.colors(100, "YlOrRd"), main = "Daily SWR (MODIS)")
