@@ -11,7 +11,21 @@ root_dir <- here()
 
 # gb shapefile ------------------------------------------------------------
 # https://www.data.gov.uk/dataset/2e17269d-10b9-4e43-b67b-57f9b02bd0f8/countries-december-2021-boundaries-uk-buc
-gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")}
+gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
+
+# Greenspace --------------------------------------------------------------
+
+# https://osdatahub.os.uk/data/downloads/open/OpenGreenspace
+# https://osdatahub.os.uk/data/downloads/open
+greenspace <- st_read("./data/opgrsp_essh_gb/OS Open Greenspace (ESRI Shape File) GB/data/GB_GreenspaceSite.shp")
+
+ggplot() + 
+  # geom_sf(data = gb, fill = "white", color = "grey80")+
+  geom_sf(data = greenspace, fill = "green") 
+# theme_minimal() +
+# theme(panel.grid = element_blank())
+ggsave("./outputs/greenspace.pdf", width = 8, height = 6)
+
 
 # landcover ---------------------------------------------------------------
 # https://catalogue.ceh.ac.uk/eidc/documents seach land cover map 
@@ -29,13 +43,61 @@ tifs <- tifs[file.exists(tifs)]
 
 # 3) read into a named list (names = year)
 years <- sub("^lcm-(\\d{4})-.*$", "\\1", basename(dirname(tifs)))
-rasters <- setNames(lapply(tifs[1:3], \(f) rast(f, lyrs = 1)), years[1:3]) # 1900 2000 and 2007 has 23
+rasters <- setNames(lapply(tifs[1:3], \(f) rast(f, lyrs = 1)), years[1:3]) # 1900 2000 and 2007 
 
 e <- ext(50000, 660000, 10000, 1220000)
 
 rasters_crop <- lapply(rasters, crop, y = e)
 
-# 1900 2000 and 2007 has 23 classes
+levels(rasters_crop[["1990"]])
+# 2000 has 27 classes
+levels(rasters_crop[["2000"]])
+r <- rasters_crop[["2000"]]
+r[r == 0] <- NA
+urban_vals <- c(171, 172)
+
+
+
+
+# green_vals <- c(
+#   11, 21,              # woodland (broad-leaved/mixed, coniferous)
+#   41, 42, 43,          # arable
+#   51, 52, 61, 71, 81,  # grasslands
+#   91,                  # bracken
+#   101, 102,            # heath
+#   111, 121,            # fen/bog
+#   151                  # montane habitats
+#   # optionally include 212 (saltmarsh) as green instead of blue; see note below
+# )
+# 
+# blue_vals <- c(
+#   131,
+#   212,       # inland water
+#   221        # sea/estuary
+# )
+# 
+# # Reclass matrix: from, to, new_value
+# # We'll create: 1=Urban, 2=Green, 0=Other (including Unclassified=0)
+# m <- rbind(
+#   cbind(urban_vals, 1),
+#   cbind(green_vals, 2),
+#   cbind(blue_vals, 3)
+# )
+
+grp <- classify(r, m, others = 0)
+
+# Make it a factor with labels
+levels(grp) <- data.frame(ID = c(0, 1), GROUP = c("Non-Urban", "Urban"))
+# levels(grp) <- data.frame(ID = c(0, 1, 2, 3), GROUP = c("Other", "Urban", "Green", "Blue"))
+
+ggplot() +
+  geom_spatraster(data = grp) +
+  labs(title = paste("LCM2000")) +
+  scale_fill_viridis_d(name = "Land Cover Class", na.value = "transparent")
+  # coord_equal() +
+  theme_minimal()
+
+ggsave(file.path("outputs", paste0("lcm_2000_grp",".png")), width = 7, height = 4, dpi = 300)
 
 for (yr in names(rasters_crop)) {
   p <- ggplot() +
@@ -77,18 +139,33 @@ ggplot() +
         
 
 # brownfield --------------------------------------------------------------
-
-        # https://www.planning.data.gov.uk/dataset/brownfield-land
         
+# https://www.planning.data.gov.uk/dataset/brownfield-land
+        
+brownfield_ <- st_read("./data/brownfield/brownfield-land.geojson")         
 brownfield <- st_read("./data/brownfield/brownfield-land.geojson") %>% st_transform(st_crs(gb))
-        
+gb_buffer <- fm_nonconvex_hull(gb, convex = -0.01)
+idx_within <- st_within(brownfield, gb_buffer, sparse = FALSE)  # matrix [n_pts x n_polys]
+pts_outside <- brownfield[!apply(idx_within, 1, any), ]        
+pts_outside$hectares <- as.numeric(pts_outside$hectares)
+
+pts_outside_ <- pts_outside %>% st_transform(4326) # 19 pts fall way outside of GB
+
 ggplot() + geom_sf(data = gb, fill = "white", color = "grey80") +
-  geom_sf(data = brownfield, size = 0.01) +
-  scale_color_viridis_c(name = "Brownfield sites (2018)", na.value = "transparent") +
+  geom_sf(data = pts_outside, size = 0.001, aes(col = hectares)) +
+  scale_color_viridis_c(name = "Brownfield sites", na.value = "transparent") +
   theme_minimal() +
   theme(panel.grid = element_blank())
 
-ggsave("./outputs/brownfield_sites.pdf", width = 8, height = 6)
+ggsave("./outputs/brownfield_outside.pdf", width = 9, height = 16)
+
+ggplot() + geom_sf(data = gb, fill = "white", color = "grey80") +
+  geom_sf(data = brownfield, size = 0.001) +
+  scale_color_viridis_c(name = "Brownfield sites", na.value = "transparent") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+ggsave("./outputs/brownfield_sites.pdf", width = 9, height = 16)
 # JAXA --------------------------------------------------------------------
 
 if(FALSE){
