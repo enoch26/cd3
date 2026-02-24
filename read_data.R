@@ -19,17 +19,34 @@ gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176
 
 # https://osdatahub.os.uk/data/downloads/open/OpenGreenspace
 # TODO may turn into a distance metrics 
-greenspace <- st_read("./data/opgrsp_essh_gb/OS Open Greenspace (ESRI Shape File) GB/data/GB_GreenspaceSite.shp")
-greenspace_fix <- greenspace %>% 
-  st_zm(drop = TRUE, what = "ZM") %>% 
-  lwgeom::st_make_valid()
+greenspace %<-% {st_read("./data/opgrsp_essh_gb/OS Open Greenspace (ESRI Shape File) GB/data/GB_GreenspaceSite.shp")}
 
+# Check Z feature-by-feature:
+if(FALSE){
+  has_z <- vapply(seq_len(nrow(greenspace)), function(i) {
+    g <- st_geometry(greenspace)[i]
+    cc <- tryCatch(st_coordinates(g), error = function(e) NULL)
+    !is.null(cc) && "Z" %in% colnames(cc)
+  }, logical(1))
+  
+  which(has_z)        # feature indices that have Z
+  table(has_z)
+  
+  # has_z
+  # FALSE   TRUE
+  # 8362 157225
+  
+}
 
 greenspace2 <- st_zm(greenspace, drop = TRUE, what = "ZM")
 
-ggplot() + 
-  # geom_sf(data = gb, fill = "white", color = "grey80")+
-  geom_sf(data = st_geometry(greenspace2)) 
+ggplot() +
+  geom_sf(data = gb, fill = "white", color = "grey80")+
+  geom_sf(data = greenspace2,
+          aes(fill = function., col = function.),
+          alpha = .5) +
+  scale_fill_viridis_d(name = "function", na.value = "transparent") +
+  scale_color_viridis_d(name = "function", na.value = "transparent")
 
 
 # theme_minimal() +
@@ -37,6 +54,38 @@ ggplot() +
 ggsave("./outputs/greenspace.pdf", width = 8, height = 6)
 ggsave("./outputs/greenspace.png", width = 8, height = 6, dpi = 300)
 
+
+# blue space --------------------------------------------------------------
+
+# https://www.data.gov.uk/dataset/eb171454-0a52-4d0b-bef9-cc58a99eeff2/blue-space-access-points-in-england
+# 3 versions of the dataset are available: 
+# Scenario 1 (All blue space): includes all walkable blue spaces that are at least 50 m^2 (0.005 ha) in area or at least 50 m in length.
+# Scenario 2 (Substantial blue space): includes walkable blue spaces that are at least 0.5 ha in area and have at least 250 m of walkable waterside route.
+# Scenario 3 (Substantial blue space): includes Scenario 2 blue spaces, but excludes those requiring walking along A or B roads to experience them.
+# point data
+bluespace %<-% {st_read("./data/England_blue_space_access_points.shp/scenario_1.shp")}
+ggplot() +
+  geom_sf(data = gb, fill = "white", color = "grey80")+
+  geom_sf(data = bluespace, size = 0.0001)
+
+# ggsave("./outputs/bluespace.pdf", width = 9, height = 16)
+ggsave("./outputs/bluespace.png", width = 9, height = 16, dpi = 300)
+
+bluespace2 %<-% {st_read("./data/England_blue_space_access_points.shp/scenario_2.shp")}
+ggplot() +
+  geom_sf(data = gb, fill = "white", color = "grey80")+
+  geom_sf(data = bluespace2, size = 0.0001)
+
+# ggsave("./outputs/bluespace.pdf", width = 9, height = 16)
+ggsave("./outputs/bluespace2.png", width = 9, height = 16, dpi = 300)
+
+bluespace3 %<-% {st_read("./data/England_blue_space_access_points.shp/scenario_3.shp")}
+ggplot() +
+  geom_sf(data = gb, fill = "white", color = "grey80")+
+  geom_sf(data = bluespace2, size = 0.0001)
+
+# ggsave("./outputs/bluespace.pdf", width = 9, height = 16)
+ggsave("./outputs/bluespace3.png", width = 9, height = 16, dpi = 300)
 
 # landcover ---------------------------------------------------------------
 # https://catalogue.ceh.ac.uk/eidc/documents seach land cover map 
@@ -66,9 +115,6 @@ levels(rasters_crop[["2000"]])
 r <- rasters_crop[["2000"]]
 r[r == 0] <- NA
 urban_vals <- c(171, 172)
-
-
-
 
 # green_vals <- c(
 #   11, 21,              # woodland (broad-leaved/mixed, coniferous)
@@ -358,6 +404,11 @@ ggplot() + geom_sf(data = radon, aes(fill = CLASS_MAX_, color = CLASS_MAX_)) +
   ggsave(paste0(out_dir, "radon_atlas.pdf"), width = 8, height = 6)
   ggsave(paste0(out_dir, "radon_atlas.png"), width = 8, height = 6, dpi = 300)
 
+
+
+# light emission ----------------------------------------------------------
+
+source("light.R")
 
 
 # gamma -------------------------------------------------------------------
