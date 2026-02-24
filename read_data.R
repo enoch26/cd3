@@ -1,4 +1,6 @@
 # https://humaniverse.github.io/geographr/
+# https://bristol.libguides.com/maps/map-data
+# https://osdatahub.os.uk/data/downloads/open
 
 libs_name <- c("INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2", 
                "readxl", "viridis", "scales", "dplyr", "future")
@@ -16,15 +18,24 @@ gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176
 # Greenspace --------------------------------------------------------------
 
 # https://osdatahub.os.uk/data/downloads/open/OpenGreenspace
-# https://osdatahub.os.uk/data/downloads/open
+# TODO may turn into a distance metrics 
 greenspace <- st_read("./data/opgrsp_essh_gb/OS Open Greenspace (ESRI Shape File) GB/data/GB_GreenspaceSite.shp")
+greenspace_fix <- greenspace %>% 
+  st_zm(drop = TRUE, what = "ZM") %>% 
+  lwgeom::st_make_valid()
+
+
+greenspace2 <- st_zm(greenspace, drop = TRUE, what = "ZM")
 
 ggplot() + 
   # geom_sf(data = gb, fill = "white", color = "grey80")+
-  geom_sf(data = greenspace, fill = "green") 
+  geom_sf(data = st_geometry(greenspace2)) 
+
+
 # theme_minimal() +
 # theme(panel.grid = element_blank())
 ggsave("./outputs/greenspace.pdf", width = 8, height = 6)
+ggsave("./outputs/greenspace.png", width = 8, height = 6, dpi = 300)
 
 
 # landcover ---------------------------------------------------------------
