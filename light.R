@@ -1,62 +1,130 @@
+out_dir <- "outputs/light_gb"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-
-years <- 1992:2013
-
-lights <- setNames(
-  lapply(years, function(y) {
-    f <- sprintf("./data/9828827/Harmonized_DN_NTL_%d_calDMSP.tif", y)
-    rast(f)
-  }),
-  years
-)
-
-years <- 2014:2024
-lights_ <- setNames(
-  lapply(years, function(y) {
-    f <- sprintf("./data/9828827/Harmonized_DN_NTL_%d_simVIIRS.tif", y)
-    rast(f)
-  }),
-  years
-)
-
-
-
-
-# crop and mask -----------------------------------------------------------
-
-gb_union <- st_union(gb)
-
-lights_all <- c(lights, lights_)
-gb_v <- as_spatvector(st_transform(gb_union, crs(lights_all[[1]])))
-
-light <- lapply(lights, function(r) {
-  mask(crop(r, gb_v), gb_v)
-})
+out_file <- list.files(out_dir, pattern = "^ntl_.*_gb\\.tif$", full.names = TRUE)
+# out_file <- file.path(out_dir, paste0("ntl_", nm, "_gb.tif"))
+  
+if (file.exists(out_file)) {
+  # read it if already written
+  light <- lapply(out_file, rast)
+  names(light) <- sub(".*ntl_(\\d{4})_gb\\.tif$", "\\1", out_file)
+} else {
+  # read file ---------------------------------------------------------------
+  years <- 1992:2013
+  
+  lights <- setNames(
+    lapply(years, function(y) {
+      f <- sprintf("./data/9828827/Harmonized_DN_NTL_%d_calDMSP.tif", y)
+      rast(f)
+    }),
+    years
+  )
+  years <- 2014:2024
+  lights_ <- setNames(
+    lapply(years, function(y) {
+      f <- sprintf("./data/9828827/Harmonized_DN_NTL_%d_simVIIRS.tif", y)
+      rast(f)
+    }),
+    years
+  )
+  
+  # crop and mask -----------------------------------------------------------
+  
+  gb_union <- st_union(gb)
+  
+  lights_all <- c(lights, lights_)
+  gb_v <- as_spatvector(st_transform(gb_union, crs(lights_all[[1]])))
+  
+  light <- lapply(lights_all, function(r) {
+    mask(crop(r, gb_v), gb_v)
+  })
+  
+  if(FALSE){
+# FOR SOME REASON, EXT NOT THE SAME FOR 2009 2010 2011
+    # light is a list of SpatRaster
+    ext_list <- lapply(light, ext)
+    
+    # Compare each extent to the first one
+    same_ext <- vapply(ext_list, function(e) all(as.vector(e) == as.vector(ext_list[[1]])),
+                       logical(1))
+    
+    table(same_ext)
+    which(!same_ext)          # indices that differ (if any)
+    names(light)[!same_ext]   # names/years that differ
+    ext_list[!same_ext]       # print the differing extents
+    
+  }
+  
+  for (nm in names(light)) {
+    
+    out_file <- file.path(out_dir, paste0("ntl_", nm, "_gb.tif"))
+    
+    if (file.exists(out_file)) {
+      message("Skipping (already exists): ", out_file)
+      next
+    }
+    
+    writeRaster(light[[nm]], out_file, overwrite = TRUE, filetype = "GTiff")
+    
+    message("Wrote: ", out_file)
+  }
+}
 
 for (nm in names(light)) {
+  out_dir <- "outputs/light_gb/maps/"
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   p <- ggplot() +
-    geom_spatraster(data = light[[nm]]) +
+    geom_spatraster(data = light[[nm]] %>% mask(gb_v)) +
     geom_sf(data = gb, fill = NA, linewidth = 0.2, colour = "white") +
     scale_fill_viridis_c(name = "Digital Numbers (DN)", na.value = "transparent") +
     coord_sf() +
     labs(title = paste("Night lights", nm)) +
     theme_minimal()
   
-  ggsave(filename = file.path("outputs", paste0("ntl_", nm, ".png")),
+  ggsave(filename = file.path(out_dir, paste0("ntl_", nm, ".png")),
          plot = p, width = 6, height = 5, dpi = 300)
 }
 
-# # 1) Make sure gb is in the same CRS as the raster
-# gb_raster_crs <- st_transform(gb, crs(light))
-# 
-# # 2) Convert sf -> terra vector
-# gb_v <- vect(gb_raster_crs)
-# 
-# # 3) Crop to bounding box of gb (fast)
-# light_crop <- crop(light, gb_v)
-# 
-# # 4) Mask to the exact gb boundary (optional but typical)
-# light_gb <- mask(light_crop, gb_v)
+
+
+# multiplot ---------------------------------------------------------------
+
+baseline_year <- "1992"
+base <- light[[baseline_year]]
+
+light_aligned <- lapply(light, function(r) terra::resample(r, base, method = "bilinear"))
+light_diff <- lapply(light_aligned, \(r) r - base)
+names(light_diff) <- names(light)
+
+yrs_show <- as.character(c(seq(1993, 2023, by = 5), 2024))
+yrs_show <- intersect(yrs_show, names(light_diff))
+
+# symmetric limits around 0 for comparable panels
+mx <- max(abs(unlist(lapply(light_diff[yrs_show], function(r) {
+  terra::global(r, "max", na.rm = TRUE)[1,1]
+}))), na.rm = TRUE)
+
+plots <- lapply(yrs_show, function(nm) {
+  ggplot() +
+    geom_spatraster(data = light_diff[[nm]]) +
+    geom_sf(data = gb, fill = NA, linewidth = 0.2, colour = "white") +
+    scale_fill_gradient2(
+      name = "DN change\n(vs 1992)",
+      low = "#2b8cbe", mid = "white", high = "#d7301f",
+      midpoint = 0, limits = c(-mx, mx),
+      na.value = "transparent"
+    ) +
+    coord_sf() +
+    labs(title = nm) 
+    # theme_minimal() 
+    # theme(legend.position = "none")
+})
+
+p_all <- wrap_plots(plots, ncol = 4, guides = "collect") + 
+  plot_annotation(title = "Night-time lights change relative to 1992 (DN)")
+
+ggsave("outputs/light_gb/maps/ntl_diff_vs_1992.png",
+       p_all, width = 12, height = 9, dpi = 300)
 
 # example -----------------------------------------------------------------
 

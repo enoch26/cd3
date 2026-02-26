@@ -3,7 +3,7 @@
 # https://osdatahub.os.uk/data/downloads/open
 
 libs_name <- c("INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2", 
-               "readxl", "viridis", "scales", "dplyr", "future")
+               "readxl", "viridis", "scales", "dplyr", "future", "patchwork")
 
 lapply(libs_name, require, character.only = TRUE)
 
@@ -14,6 +14,7 @@ root_dir <- here()
 # gb shapefile ------------------------------------------------------------
 # https://www.data.gov.uk/dataset/2e17269d-10b9-4e43-b67b-57f9b02bd0f8/countries-december-2021-boundaries-uk-buc
 gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
+gb_buffer <- fm_nonconvex_hull(gb, convex = -0.01)
 
 # Greenspace --------------------------------------------------------------
 
@@ -201,7 +202,7 @@ ggplot() +
         
 brownfield_ <- st_read("./data/brownfield/brownfield-land.geojson")         
 brownfield <- st_read("./data/brownfield/brownfield-land.geojson") %>% st_transform(st_crs(gb))
-gb_buffer <- fm_nonconvex_hull(gb, convex = -0.01)
+
 idx_within <- st_within(brownfield, gb_buffer, sparse = FALSE)  # matrix [n_pts x n_polys]
 pts_outside <- brownfield[!apply(idx_within, 1, any), ]        
 pts_outside$hectares <- as.numeric(pts_outside$hectares)
