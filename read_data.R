@@ -375,16 +375,12 @@ ggplot() +
 ggsave("./outputs/landfill_sites.pdf", width = 8, height = 6)
 ggsave("./outputs/landfill_sites.png", width = 8, height = 6, dpi = 300)
 
-
-
-
-
 # radon -------------------------------------------------------------------
 # https://maps-bgs.opendata.arcgis.com/datasets/bgs::radon-indicative-atlas/about
 # CLASS
 # https://services3.arcgis.com/7bJVHfju2RXdGZa4/arcgis/rest/services/Radon_Indicative_Atlas_v3/FeatureServer/0
-out_dir <- here::here("./outputs/radon/")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir_radon <- here::here("./outputs/radon/")
+dir.create(out_dir_radon, recursive = TRUE, showWarnings = FALSE)
 # radon_ <- read_sf("./data/Radon_indicative_atlas_GB_v3_ESRI/Radon_Indicative_Atlas_v3.shp")
 radon <- read_sf("./data/Radon_Indicative_Atlas/Radon_Indicative_Atlas.shp")
 radon$CLASS_MAX <- as.factor(radon$CLASS_MAX)
@@ -399,11 +395,11 @@ radon <- radon %>% dplyr::mutate(
 )
 
 ggplot() + geom_sf(data = radon, aes(fill = CLASS_MAX_, color = CLASS_MAX_)) +
-  scale_color_brewer(palette = "YlGn", direction = 1, drop = FALSE, name = "RnP") +
-  scale_fill_brewer(palette = "YlGn", direction = 1, drop = FALSE, name = "RnP")
+  scale_color_brewer(palette = "BuPu", direction = 1, drop = FALSE, name = "RnP") +
+  scale_fill_brewer(palette = "BuPu", direction = 1, drop = FALSE, name = "RnP")
   # ggplot() + geom_spatraster(data = radon, aes(fill = CLASS_MAX))
-  ggsave(paste0(out_dir, "radon_atlas.pdf"), width = 8, height = 6)
-  ggsave(paste0(out_dir, "radon_atlas.png"), width = 8, height = 6, dpi = 300)
+  ggsave(paste0(out_dir_radon, "radon_atlas.pdf"), width = 8, height = 6)
+  ggsave(paste0(out_dir_radon, "radon_atlas.png"), width = 8, height = 6, dpi = 300)
 
 
 

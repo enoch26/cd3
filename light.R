@@ -4,10 +4,14 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 out_file <- list.files(out_dir, pattern = "^ntl_.*_gb\\.tif$", full.names = TRUE)
 # out_file <- file.path(out_dir, paste0("ntl_", nm, "_gb.tif"))
   
-if (file.exists(out_file)) {
+if (any(file.exists(out_file))) {
   # read it if already written
   light <- lapply(out_file, rast)
   names(light) <- sub(".*ntl_(\\d{4})_gb\\.tif$", "\\1", out_file)
+  
+  gb_union <- st_union(gb)
+  
+  gb_v <- as_spatvector(st_transform(gb_union, crs(light[[1]])))
 } else {
   # read file ---------------------------------------------------------------
   years <- 1992:2013
