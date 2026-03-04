@@ -116,6 +116,10 @@ ml <- 7200
 # or swr=i2buf(n,m)*0.01+0.0 (MODIS and SeaWiFS)
 out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian = "little")
 
+# png("filename.png")
+# plot(out$par)
+# dev.off()
+
 # If you want SWR instead:
 # GLI uses 0.02; MODIS/SeaWiFS uses 0.01
 
@@ -155,4 +159,6 @@ ggplot() + geom_spatraster(data = r) + geom_sf(data = world, fill = NA, color = 
 ggsave("./outputs/swr_modis.pdf")
 ggsave("./outputs/swr_modis.png")
 
+png("filename.png")
 plot(r, col = hcl.colors(100, "YlOrRd"), main = "Daily SWR (MODIS)")
+dev.off()
