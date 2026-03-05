@@ -105,11 +105,13 @@ read_product <- function(path,
 # nl <- 1440; ml <- 721
 
 path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
+# for some reason, readme say this
 # nl <- 3601; ml <- 7200
 # Choose grid:
 # SWR:
-nl <- 3601
-ml <- 7200
+# but actually this looks more plausible
+ml <- 3601
+nl <- 7200
 
 
 # PAR example (scale 0.01):
@@ -128,33 +130,68 @@ out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian =
 
 # Printing every pixel is enormous; here’s how to inspect a few:
 cat("Header para:", out$header$para, "\n")
-cat("PAR sample [n=1..5, m=1]:\n")
-print(out$par[1:5, 1])
 cat("SWR (GLI) sample [n=1..5, m=1]:\n")
 print(out$par[1:5, 1])
 
 
-swr <- out$par
-d <- 0.25
-lon <- 0 + (0:(nl-1)) * d          # 0, 0.25, ..., 359.75   (centers)
-lat <- 90 - (0:(ml-1)) * d         # 90, 89.75, ..., -90   (centers)
+swr <- t(out$par)
 
-# swr must be [ml x nl], row 1 = 90N, col 1 = 0E
-r <- rast(
-  nrows = ml, ncols = nl,
-  xmin = -180 - d/2, xmax = 180 - d/2,
-  ymax = 90 + d/2, ymin = -90 + d/2,
-  # xmin = min(lon) - d/2, xmax = max(lon) + d/2,
-  # ymax = max(lat) + d/2, ymin = min(lat) - d/2,
-  crs = "EPSG:4326"
-)
+r <- rast(swr)
+# if it’s lon/lat global grid, you likely also want:
+# ext(r) <- c(-180, 180, -90, 90)
+# crs(r) <- "EPSG:4326"
 
-library(sf)
+plot(r)
+
+# lets cont ----------------------------------------------------------------
+
+res <- 0.05
+lon_ul <- 0
+lat_ul <- 90
+
+xmin <- lon_ul - res/2
+ymax <- lat_ul + res/2
+xmax <- xmin + ncol(r) * res
+ymin <- ymax - nrow(r) * res
+
+ext(r) <- ext(xmin, xmax, ymin, ymax)
+crs(r) <- "EPSG:4326"
+r_180 <- rotate(r)
+
+plot(r_180)
+
+library(geodata)
+
+# import a world countries map:
+countries <- world(resolution = 5, path = "maps") 
+
+plot(r_180, col = hcl.colors(256, "viridis"), axes = TRUE)
+plot(countries, add = TRUE, col = NA, border = "black", lwd = 2)
+
+# im not sure now 
+ggplot() + geom_spatraster(data = r) +
+  geom_sf(data = countries, fill = NA, color = "black", size = 0.1) +
+  scale_fill_viridis_c(option = "C")
+
+
+# here comes the problem --------------------------------------------------
+
+gb <- {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
+
+gb_4326 <- gb %>% st_transform(crs = st_crs(r_180))
+
+ggplot() + geom_spatraster(data = r) +
+  geom_sf(data = gb_4326, fill = NA, color = "black", size = 0.1) +
+  scale_fill_viridis_c(option = "C")
+
+# add world ---------------------------------------------------------------
+
 world <- st_read("./data/World_Countries_(Generalized)_-573431906301700955/World_Countries_Generalized.shp") %>% st_transform(crs = st_crs(r))
 
 # Fill values; terra stores from top row to bottom row, which matches lat=90..-90
 values(r) <- as.vector(swr)   # note: t() to go row-by-row into the raster
-ggplot() + geom_spatraster(data = r) + geom_sf(data = world, fill = NA, color = "black", size = 0.1) +
+ggplot() + geom_spatraster(data = r) +
+  # geom_sf(data = world, fill = NA, color = "black", size = 0.1) +
   scale_fill_viridis_c(option = "C")
 ggsave("./outputs/swr_modis.pdf")
 ggsave("./outputs/swr_modis.png")
@@ -162,3 +199,4 @@ ggsave("./outputs/swr_modis.png")
 png("filename.png")
 plot(r, col = hcl.colors(100, "YlOrRd"), main = "Daily SWR (MODIS)")
 dev.off()
+ 
