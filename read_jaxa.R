@@ -104,7 +104,10 @@ read_product <- function(path,
 # swr__le : daily mean shortwave radiation [W/m^2] = DN * 0.10000E-01
 # nl <- 1440; ml <- 721
 
-path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
+# path <- "./data/jaxa_swr/2000/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le"
+# path <- "./data/jaxa_swr/2000/MOD02SSH_A20000301Avm_v601_7200_3601_swr__le/MOD02SSH_A20000301Avm_v601_7200_3601_swr__le"
+# path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
+
 # for some reason, readme say this
 # nl <- 3601; ml <- 7200
 # Choose grid:
@@ -113,10 +116,10 @@ path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02
 ml <- 3601
 nl <- 7200
 
-
 # PAR example (scale 0.01):
 # or swr=i2buf(n,m)*0.01+0.0 (MODIS and SeaWiFS)
 out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian = "little")
+
 
 # png("filename.png")
 # plot(out$par)
@@ -133,17 +136,34 @@ cat("Header para:", out$header$para, "\n")
 cat("SWR (GLI) sample [n=1..5, m=1]:\n")
 print(out$par[1:5, 1])
 
-
 swr <- t(out$par)
-
 r <- rast(swr)
 # if it’s lon/lat global grid, you likely also want:
 # ext(r) <- c(-180, 180, -90, 90)
 # crs(r) <- "EPSG:4326"
 
-plot(r)
+# plot(r)
 
-# lets cont ----------------------------------------------------------------
+
+# plot in a loop ----------------------------------------------------------
+paths <- list.files("./data/jaxa_swr", recursive = TRUE, full.names = TRUE)
+
+# keep only the “data file” part (your files have no extension, same name as folder)
+# adapt the pattern if needed:
+
+# TODO if you wanna read in a loop
+paths <- paths[grepl("MOD02SSH_.*_7200_3601_swr__le$", paths)]
+out <- lapply(paths, read_product, ml = 3601, nl = 7200)
+
+countries <- geodata::world(resolution = 5, path = "maps")
+
+# paths: vector of file paths
+# read_one: your function that reads a file and returns (at least) the PAR grid/matrix
+# Example expectation: out$par is a matrix [nrow x ncol] i.e. [3601 x 7200]
+# If instead you have a SpatRaster already, adjust accordingly.
+
+out_dir <- "outputs/swr/"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
 res <- 0.05
 lon_ul <- 0
@@ -154,16 +174,61 @@ ymax <- lat_ul + res/2
 xmax <- xmin + ncol(r) * res
 ymin <- ymax - nrow(r) * res
 
+for (p in paths) {
+  
+  out <- read_product(
+    p,
+    nl = 7200,
+    ml = 3601,
+    data_scale = 0.01,
+    data_offset = 0.0,
+    endian = "little"
+  )  # adjust args
+  par_mat <- t(out$par)                                           # numeric matrix [3601 x 7200]
+  
+  # Make SpatRaster from matrix
+  r <- rast(par_mat)
+  # By default, rast(matrix) assumes row 1 is the top; that matches lat 90 -> -90.
+  
+  ext(r) <- ext(xmin, xmax, ymin, ymax)
+  crs(r) <- "EPSG:4326"
+  
+  # Rotate 0..360 to -180..180 for nicer world overlay
+  r_180 <- rotate(r)
+  
+  # Output filename
+  fname <- tools::file_path_sans_ext(basename(p))
+  png_file <- file.path(out_dir, paste0(fname, "_PAR.png"))
+  
+  png(png_file, width = 2200, height = 1200, res = 200)
+  plot(r_180, col = hcl.colors(256, "viridis"), axes = TRUE,
+       main = paste("PAR:", fname))
+  plot(countries, add = TRUE, col = NA, border = "black", lwd = 1)
+  dev.off()
+}
+
+
+# lets cont ----------------------------------------------------------------
+res <- 0.05
+lon_ul <- 0
+lat_ul <- 90
+
+# import a world countries map:
+countries <- geodata::world(resolution = 5, path = "maps") 
+
+out_dir <- "plots"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+xmin <- lon_ul - res/2
+ymax <- lat_ul + res/2
+xmax <- xmin + ncol(r) * res
+ymin <- ymax - nrow(r) * res
+
 ext(r) <- ext(xmin, xmax, ymin, ymax)
 crs(r) <- "EPSG:4326"
 r_180 <- rotate(r)
 
-plot(r_180)
-
-library(geodata)
-
-# import a world countries map:
-countries <- world(resolution = 5, path = "maps") 
+# plot(r_180)
 
 plot(r_180, col = hcl.colors(256, "viridis"), axes = TRUE)
 plot(countries, add = TRUE, col = NA, border = "black", lwd = 2)
