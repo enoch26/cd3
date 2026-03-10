@@ -13,9 +13,18 @@ root_dir <- here()
 
 # gb shapefile ------------------------------------------------------------
 # https://www.data.gov.uk/dataset/2e17269d-10b9-4e43-b67b-57f9b02bd0f8/countries-december-2021-boundaries-uk-buc
-gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
+# gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
 gb <- {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
-gb_buffer <- fm_nonconvex_hull(gb, convex = -0.01)
+buffer_len <- .02
+gb_buffer <- gb %>%
+  st_make_valid() %>%
+  st_union() %>%
+  fm_nonconvex_hull(convex = -buffer_len)
+
+ggplot(gb_buffer) + geom_sf(fill = "steelblue", colour = "white", linewidth = 0.2) +
+  geom_sf(data = gb, fill = NA, colour = "black") + 
+  theme_minimal()
+ggsave("gb_buffer.pdf")
 
 # Greenspace --------------------------------------------------------------
 
