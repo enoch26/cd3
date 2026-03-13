@@ -36,7 +36,10 @@ if ("fmesher" %in% missing_pkgs) {
 }
 
 if (length(missing_pkgs) > 0) {
-  install.packages(setdiff(missing_pkgs, "INLA"))}
+  install.packages(setdiff(missing_pkgs, c("INLA", "inlabru", "fmesher")))}
+
+# load all libraries
+invisible(lapply(libs_name, library, character.only = TRUE))
 
 # source("./functions.R")
 # Read data
@@ -448,6 +451,13 @@ ggplot() + geom_sf(data = radon, aes(fill = CLASS_MAX_, color = CLASS_MAX_)) +
 
 source("light.R")
 
+
+
+# air pollution -----------------------------------------------------------
+
+
+  
+  
 # gamma -------------------------------------------------------------------
 
 # https://www.data.gov.uk/dataset/568e58c0-6404-4a8a-9654-4440245fb6e4/ambient-gamma-radiation-dose-rates-across-the-uk

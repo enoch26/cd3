@@ -1,4 +1,4 @@
-out_dir <- "outputs/light_gb"
+out_dir <- "data/nightlight_gb"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 out_file <- list.files(out_dir, pattern = "^ntl_.*_gb\\.tif$", full.names = TRUE)
@@ -8,10 +8,7 @@ if (any(file.exists(out_file))) {
   # read it if already written
   light <- lapply(out_file, rast)
   names(light) <- sub(".*ntl_(\\d{4})_gb\\.tif$", "\\1", out_file)
-  
-  gb_union <- st_union(gb)
-  
-  gb_v <- as_spatvector(st_transform(gb_union, crs(light[[1]])))
+  gb_v <- as_spatvector(st_transform(gb_buffer, crs(light[[1]])))
 } else {
   # read file ---------------------------------------------------------------
   years <- 1992:2013
@@ -34,10 +31,8 @@ if (any(file.exists(out_file))) {
   
   # crop and mask -----------------------------------------------------------
   
-  gb_union <- st_union(gb)
-  
   lights_all <- c(lights, lights_)
-  gb_v <- as_spatvector(st_transform(gb_union, crs(lights_all[[1]])))
+  gb_v <- as_spatvector(st_transform(gb_buffer, crs(lights_all[[1]])))
   
   light <- lapply(lights_all, function(r) {
     mask(crop(r, gb_v), gb_v)
@@ -75,7 +70,7 @@ if (any(file.exists(out_file))) {
 }
 
 for (nm in names(light)) {
-  out_dir <- "outputs/light_gb/maps/"
+  out_dir <- "outputs/nightlight_gb/"
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   p <- ggplot() +
     geom_spatraster(data = light[[nm]] %>% mask(gb_v)) +
@@ -88,8 +83,6 @@ for (nm in names(light)) {
   ggsave(filename = file.path(out_dir, paste0("ntl_", nm, ".png")),
          plot = p, width = 6, height = 5, dpi = 300)
 }
-
-
 
 # multiplot ---------------------------------------------------------------
 
@@ -127,7 +120,7 @@ plots <- lapply(yrs_show, function(nm) {
 p_all <- wrap_plots(plots, ncol = 4, guides = "collect") + 
   plot_annotation(title = "Night-time lights change relative to 1992 (DN)")
 
-ggsave("outputs/light_gb/maps/ntl_diff_vs_1992.png",
+ggsave("outputs/nightlight_gb/ntl_diff_vs_1992.png",
        p_all, width = 12, height = 9, dpi = 300)
 
 # example -----------------------------------------------------------------
