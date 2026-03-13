@@ -2,10 +2,41 @@
 # https://bristol.libguides.com/maps/map-data
 # https://osdatahub.os.uk/data/downloads/open
 
-libs_name <- c("INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2", 
-               "readxl", "viridis", "scales", "dplyr", "future", "patchwork")
+libs_name <- c(
+  "INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2",
+  "readxl", "viridis", "scales", "dplyr", "future", "patchwork"
+)
 
-lapply(libs_name, require, character.only = TRUE)
+missing_pkgs <- libs_name[!sapply(libs_name, requireNamespace, quietly = TRUE)]
+
+if ("INLA" %in% missing_pkgs) {
+  install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/testing"), dep=TRUE)
+}
+
+
+if ("inlabru" %in% missing_pkgs) {
+  # Enable universe(s) by inlabru-org
+  options(repos = c(
+    inlabruorg = "https://inlabru-org.r-universe.dev",
+    INLA = "https://inla.r-inla-download.org/R/testing",
+    CRAN = "https://cloud.r-project.org"
+  ))
+  
+  # Install some packages
+  install.packages("inlabru")}
+
+
+if ("fmesher" %in% missing_pkgs) {
+  # Enable universe(s) by inlabru-org
+  options(repos = c(
+    inlabruorg = "https://inlabru-org.r-universe.dev",
+    getOption("repos")
+  ))
+  install.packages("fmesher")
+}
+
+if (length(missing_pkgs) > 0) {
+  install.packages(setdiff(missing_pkgs, "INLA"))}
 
 # source("./functions.R")
 # Read data
@@ -417,7 +448,6 @@ ggplot() + geom_sf(data = radon, aes(fill = CLASS_MAX_, color = CLASS_MAX_)) +
 
 source("light.R")
 
-
 # gamma -------------------------------------------------------------------
 
 # https://www.data.gov.uk/dataset/568e58c0-6404-4a8a-9654-4440245fb6e4/ambient-gamma-radiation-dose-rates-across-the-uk
@@ -428,3 +458,5 @@ source("light.R")
 
 # https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/lowersuperoutputareamidyearpopulationestimatesnationalstatistics
 
+# Noise ----------------------------------------------------------
+# https://environment.data.gov.uk/explore/562c9d56-7c2d-4d42-83bb-578d6e97a517?download=true
