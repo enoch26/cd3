@@ -119,8 +119,6 @@ for (i in seq_along(rasters_crop)) {
 
 r_stack <- rast(rasters_crop)
 
-
-
 global_min <- global(r_stack, "min", na.rm = TRUE)[1, 1]
 global_max <- global(r_stack, "max", na.rm = TRUE)[1, 1]
 
