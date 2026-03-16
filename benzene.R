@@ -6,7 +6,7 @@ library(terra)
 library(stringr)
 
 # folder containing CSVs
-in_dir  <- paste0(here::here(), "/data/defra/pm10")
+in_dir  <- paste0(here::here(), "/data/defra/benzene")
 out_tif <- file.path(in_dir, "geotiff")
 out_png <- file.path(in_dir, "plots")
 
@@ -80,7 +80,7 @@ for (obj in rasters_list) {
   yr <- obj$year
   r  <- obj$raster
   
-  out_file <- file.path(out_tif, paste0("pm10_", yr, ".tif"))
+  out_file <- file.path(out_tif, paste0("benzene_", yr, ".tif"))
   writeRaster(r, out_file, overwrite = TRUE)
 }
 
@@ -115,7 +115,7 @@ dir.create(out_tif, showWarnings = FALSE, recursive = TRUE)
 for (i in seq_along(rasters_crop)) {
   writeRaster(
     rasters_crop[[i]],
-    file.path(out_tif, paste0("pm10_", years[i], "_overlap.tif")),
+    file.path(out_tif, paste0("benzene_", years[i], "_overlap.tif")),
     overwrite = TRUE
   )
 }
@@ -133,7 +133,7 @@ ncol_plot <- 4
 nrow_plot <- ceiling(n / ncol_plot)
 
 png(
-  file.path(out_png, "pm10_overlap_multipanel.png"),
+  file.path(out_png, "benzene_overlap_multipanel.png"),
   width = 2200,
   height = 600 * nrow_plot,
   res = 200
@@ -176,7 +176,7 @@ ncol_plot <- 4
 nrow_plot <- ceiling(n / ncol_plot)
 
 png(
-  filename = file.path(out_png, "pm10_2002_2024_multipanel.png"),
+  filename = file.path(out_png, "benzene_2002_2024_multipanel.png"),
   width = 2200,
   height = 600 * nrow_plot,
   res = 200
