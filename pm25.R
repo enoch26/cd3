@@ -94,19 +94,16 @@ years <- sapply(rasters_list, `[[`, "year")
 # extract rasters
 rasters <- lapply(rasters_list, `[[`, "raster")
 
-areas <- sapply(rasters, function(r) {
-  e <- ext(r)
-  (e$xmax - e$xmin) * (e$ymax - e$ymin)
-})
+exts <- lapply(rasters, ext)
 
-# find overlapping extent across all rasters
-common_ext <- ext(rasters[[which.min(areas)]])
-for (i in 2:length(rasters)) {
-  common_ext <- intersect(common_ext, ext(rasters[[i]]))
-}
+common_ext <- ext(
+  max(sapply(exts, xmin)),
+  min(sapply(exts, xmax)),
+  max(sapply(exts, ymin)),
+  min(sapply(exts, ymax))
+)
 
-rasters_crop <- lapply(rasters, crop, y = common_ext)
-
+rasters_crop <- lapply(rasters, function(r) crop(r, common_ext))
 for (i in 2:length(rasters_crop)) {
   print(compareGeom(rasters_crop[[1]], rasters_crop[[i]], stopOnError = FALSE))
 }

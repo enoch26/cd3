@@ -93,20 +93,16 @@ rasters_list <- rasters_list[ord]
 years <- sapply(rasters_list, `[[`, "year")
 # extract rasters
 rasters <- lapply(rasters_list, `[[`, "raster")
+exts <- lapply(rasters, ext)
 
-areas <- sapply(rasters, function(r) {
-  e <- ext(r)
-  (e$xmax - e$xmin) * (e$ymax - e$ymin)
-})
+common_ext <- ext(
+  max(sapply(exts, xmin)),
+  min(sapply(exts, xmax)),
+  max(sapply(exts, ymin)),
+  min(sapply(exts, ymax))
+)
 
-# find overlapping extent across all rasters
-common_ext <- ext(rasters[[which.min(areas)]])
-for (i in 2:length(rasters)) {
-  common_ext <- intersect(common_ext, ext(rasters[[i]]))
-}
-
-rasters_crop <- lapply(rasters, crop, y = common_ext)
-
+rasters_crop <- lapply(rasters, function(r) crop(r, common_ext))
 for (i in 2:length(rasters_crop)) {
   print(compareGeom(rasters_crop[[1]], rasters_crop[[i]], stopOnError = FALSE))
 }
@@ -122,6 +118,8 @@ for (i in seq_along(rasters_crop)) {
 
 
 r_stack <- rast(rasters_crop)
+
+
 
 global_min <- global(r_stack, "min", na.rm = TRUE)[1, 1]
 global_max <- global(r_stack, "max", na.rm = TRUE)[1, 1]
@@ -157,8 +155,6 @@ dev.off()
 
 
 # well... if they align ext -------------------------------------------------------
-
-
 
 # combine into one SpatRaster
 r_stack <- rast(lapply(rasters_list, `[[`, "raster"))
