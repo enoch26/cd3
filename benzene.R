@@ -85,7 +85,6 @@ for (obj in rasters_list) {
 }
 
 
-# they dun align ext ------------------------------------------------------
 
 # sort by year
 ord <- order(sapply(rasters_list, `[[`, "year"))
@@ -154,44 +153,82 @@ for (i in seq_along(rasters_crop)) {
 dev.off()
 
 
-# well... if they align ext -------------------------------------------------------
+# difference plot ---------------------------------------------------------
+# difference plot using first year as baseline, with one common legend
+# centred on zero
 
+baseline_year <- years[1]
+baseline <- r_stack[[1]]
 
+r_diff <- r_stack - baseline
+names(r_diff) <- names(r_stack)
 
-# combine into one SpatRaster
-r_stack <- rast(lapply(rasters_list, `[[`, "raster"))
+# symmetric scale around zero
+diff_min <- global(r_diff, "min", na.rm = TRUE)[1, 1]
+diff_max <- global(r_diff, "max", na.rm = TRUE)[1, 1]
+max_abs  <- max(abs(c(diff_min, diff_max)))
+max_abs  <- ceiling(max_abs * 10) / 10
+zlim_diff <- c(-max_abs, max_abs)
 
-# common value range across all years
-global_min <- global(r_stack, "min", na.rm = TRUE)[1,1]
-global_max <- global(r_stack, "max", na.rm = TRUE)[1,1]
+# diverging palette
+cols_diff <- hcl.colors(31, "Blue-Red 3", rev = TRUE)
 
-# colour palette
-cols <- hcl.colors(30, "YlOrRd", rev = FALSE)
+# symmetric tick marks centred on zero
+ticks <- round(seq(-max_abs, max_abs, length.out = 5), 1)
 
-# save one multi-panel plot with same legend scale
-n <- nlyr(r_stack)
+n <- nlyr(r_diff)
 ncol_plot <- 4
 nrow_plot <- ceiling(n / ncol_plot)
 
 png(
-  filename = file.path(out_png, "benzene_2002_2024_multipanel.png"),
-  width = 2200,
+  file.path(out_png, paste0("benzene_change_from_", baseline_year, "_multipanel_common_legend.png")),
+  width = 3400,
   height = 600 * nrow_plot,
   res = 200
 )
 
-par(mfrow = c(nrow_plot, ncol_plot), mar = c(3, 3, 3, 5))
+par(
+  mfrow = c(nrow_plot, ncol_plot),
+  mar = c(2, 2, 3, 1),
+  oma = c(0, 0, 0, 10),
+  xpd = NA
+)
 
-for (i in 1:nlyr(r_stack)) {
+# plot panels without legends
+for (i in 1:nlyr(r_diff)) {
   plot(
-    r_stack[[i]],
-    col = cols,
-    zlim = c(global_min, global_max),
-    main = gsub("^y", "", names(r_stack)[i]),
+    r_diff[[i]],
+    col = cols_diff,
+    zlim = zlim_diff,
+    main = paste0(years[i], " - ", baseline_year),
     axes = FALSE,
     box = FALSE,
-    legend = TRUE
+    legend = FALSE
   )
 }
+
+# legend in a new figure region on the right
+par(fig = c(0.91, 0.95, 0.18, 0.82), new = TRUE, mar = c(1, 1, 1, 3))
+plot.new()
+plot.window(xlim = c(0, 1), ylim = zlim_diff)
+
+# draw vertical colour bar
+ybreaks <- seq(zlim_diff[1], zlim_diff[2], length.out = length(cols_diff) + 1)
+
+for (j in seq_along(cols_diff)) {
+  rect(
+    xleft   = 0,
+    ybottom = ybreaks[j],
+    xright  = 0.5,
+    ytop    = ybreaks[j + 1],
+    col     = cols_diff[j],
+    border  = NA
+  )
+}
+
+# border and axis
+rect(0, zlim_diff[1], 0.5, zlim_diff[2], border = "black", lwd = 1)
+axis(4, at = ticks, labels = ticks, las = 1, cex.axis = 0.9)
+mtext("Difference", side = 4, line = 2)
 
 dev.off()

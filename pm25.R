@@ -85,7 +85,6 @@ for (obj in rasters_list) {
 }
 
 
-# they dun align ext ------------------------------------------------------
 
 # sort by year
 ord <- order(sapply(rasters_list, `[[`, "year"))
@@ -152,45 +151,3 @@ for (i in seq_along(rasters_crop)) {
 
 dev.off()
 
-
-# well... if they align ext -------------------------------------------------------
-
-
-
-# combine into one SpatRaster
-r_stack <- rast(lapply(rasters_list, `[[`, "raster"))
-
-# common value range across all years
-global_min <- global(r_stack, "min", na.rm = TRUE)[1,1]
-global_max <- global(r_stack, "max", na.rm = TRUE)[1,1]
-
-# colour palette
-cols <- hcl.colors(30, "YlOrRd", rev = FALSE)
-
-# save one multi-panel plot with same legend scale
-n <- nlyr(r_stack)
-ncol_plot <- 4
-nrow_plot <- ceiling(n / ncol_plot)
-
-png(
-  filename = file.path(out_png, "pm25_2002_2024_multipanel.png"),
-  width = 2200,
-  height = 600 * nrow_plot,
-  res = 200
-)
-
-par(mfrow = c(nrow_plot, ncol_plot), mar = c(3, 3, 3, 5))
-
-for (i in 1:nlyr(r_stack)) {
-  plot(
-    r_stack[[i]],
-    col = cols,
-    zlim = c(global_min, global_max),
-    main = gsub("^y", "", names(r_stack)[i]),
-    axes = FALSE,
-    box = FALSE,
-    legend = TRUE
-  )
-}
-
-dev.off()
