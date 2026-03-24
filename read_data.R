@@ -271,8 +271,7 @@ if(file.exists("./data/england_mesh2.rds")){
                              boundary = fm_extensions(england_bnd2, c(
                                0,
                                edge_len_ldn*200)),
-                             max.edge = c(edge_len_outside_ldn*2, edge_len_ldn*250),
-                             cutoff = edge_len_ldn*.9
+                             max.edge = c(edge_len_outside_ldn*2, edge_len_ldn*250)
   )
   
   if(FALSE){
@@ -282,7 +281,7 @@ if(file.exists("./data/england_mesh2.rds")){
     gg(england_mesh2) +
     geom_sf(data = england, fill = NA, colour = "black") +
     theme_minimal()
-  ggsave("england_mesh3_mix.png", dpi = 300, width = 32, height = 24)
+  ggsave("england_mesh2_mix.png", dpi = 300, width = 32, height = 24)
   
   saveRDS(england_mesh2, file = "england_mesh2_mix.rds")
 }
