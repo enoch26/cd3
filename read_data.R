@@ -4,7 +4,7 @@
 
 libs_name <- c("fingertipsR",
   "INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2",
-  "readxl", "viridis", "scales", "dplyr", "future", "patchwork", "readr"
+  "readxl", "viridis", "scales", "dplyr", "future", "patchwork", "readr", "stringr"
 )
 
 missing_pkgs <- libs_name[!sapply(libs_name, requireNamespace, quietly = TRUE)]
@@ -60,23 +60,99 @@ root_dir <- here()
 # gb shapefile ------------------------------------------------------------
 # https://www.data.gov.uk/dataset/2e17269d-10b9-4e43-b67b-57f9b02bd0f8/countries-december-2021-boundaries-uk-buc
 # gb %<-% {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")}
-gb <- {
+gb %<-% {
   st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")
 }
 england <- gb[1,]
 
-lsoa <- st_read("./data/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BFE_V10_7644382385641440432/LSOA_2021_EW_BFE_V10.shp")
+lsoa %<-% st_read("./data/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BFE_V10_7644382385641440432/LSOA_2021_EW_BFE_V10.shp")
+
+# checking area 
+if(FALSE){
+  lsoa %>%
+    mutate(area = st_area(geometry)) %>%  # Add area as a new column
+    arrange(area) %>%                     # Sort by area ascending (smallest first)
+    slice(5)                              # Select the smallest
+  
+  # ~100m edge len mesh
+    lsoaleq100 <- lsoa %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%  # Add area as a new column
+    filter(area < 5000) %>%                         # Keep only areas < 5e+05 m² 
+    arrange(area)                                     # Sort ascending (smallest first)
+    
+  # ~.25km edge len mesh
+    lsoaleq250 <- lsoa %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%  # Add area as a new column
+    filter(area < 27063.29) %>%                         # Keep only areas < 27063.29 m² 
+    arrange(area)                                     # Sort ascending (smallest first)
+    
+  # ~.290km edge len mesh
+    lsoaleq290 <- lsoa %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%  # Add area as a new column
+    filter(area < 36416.37) %>%                         # Keep only areas < 36416.37 m² 
+    arrange(area)                                     # Sort ascending (smallest first)
+    
+  # ~.3km edge len mesh
+    lsoaleq300 <- lsoa %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%  # Add area as a new column
+    filter(area < 38971.14) %>%                         # Keep only areas < 38971.14 m² 
+    arrange(area)                                     # Sort ascending (smallest first)
+
+  
+  # Simple feature collection with 1 feature and 9 fields
+  # Geometry type: MULTIPOLYGON
+  # Dimension:     XY
+  # Bounding box:  xmin: 537756.3 ymin: 179331.5 xmax: 538021.3 ymax: 179576.9
+  # Projected CRS: OSGB36 / British National Grid
+  # LSOA21CD           LSOA21NM LSOA21NMW  BNG_E  BNG_N     LAT     LONG                             GlobalID
+  # 1 E01035704 Tower Hamlets 036C      <NA> 537889 179405 51.4968 -0.01497 df64e88e-9830-416a-a546-4c17dd5509d5
+  # area                       geometry
+  # 1 20330.04 [m^2] MULTIPOLYGON (((537967.2 17...
+}
+
+# if(FALSE){
+  ldn_rx <- paste(
+    c("Barking and Dagenham","Barnet","Bexley","Brent","Bromley","Camden",
+      "Croydon","Ealing","Enfield","Greenwich","Hackney",
+      "Hammersmith and Fulham","Haringey","Harrow","Havering","Hillingdon",
+      "Hounslow","Islington","Kensington and Chelsea","Kingston upon Thames",
+      "Lambeth","Lewisham","Merton","Newham","Redbridge",
+      "Richmond upon Thames","Southwark","Sutton","Tower Hamlets",
+      "Waltham Forest","Wandsworth","Westminster","City of London"),
+    collapse = "|"
+  )
+  
+  lsoa <- lsoa %>%
+    mutate(is_london = str_detect(LSOA21NM, paste0("^(", ldn_rx, ")\\s+[0-9]{3}[A-Z]$")))
+  
+  bnds <- lsoa %>%
+    mutate(grp = if_else(is_london, "ldn", "out")) %>%
+    group_by(grp) %>%
+    summarise(do_union = TRUE) %>%
+    st_make_valid()
+  
+  lsoa_ldn <- bnds %>% filter(grp == "ldn")
+  lsoa_outside_ldn <- bnds %>% filter(grp == "out")
+  
+  edge_len_ldn <- 100
+  edge_len_outside_ldn <- edge_len_ldn * 2.9 
+  
+  hex_pts_ldn <- fm_hexagon_lattice(bnd = lsoa_ldn, edge_len = edge_len_ldn)
+  hex_pts_outside_ldn <- fm_hexagon_lattice(bnd = lsoa_outside_ldn, edge_len = edge_len_outside_ldn)
+  hex_pts <- c(hex_pts_ldn, hex_pts_outside_ldn)
+# }
+
 
 # st_area(lsoa)
 # Min.   1st Qu.    Median      Mean   3rd Qu.      Max.
 # 9719    274400    468159   4321285   1397085 683774940
 
 
-buffer_len <- .02
 
 if (file.exists("./data/england_buffer.shp")) {
   england_buffer <- st_read("./data/england_buffer.shp")
 } else {
+  buffer_len <- .02
   england_buffer <- england %>%
     st_make_valid() %>%
     st_union() %>%
@@ -86,6 +162,8 @@ if (file.exists("./data/england_buffer.shp")) {
 
   st_write(england_buffer, "./data/england_buffer.shp", delete_dsn = TRUE)
 }
+
+
 
 england_bnd <- fm_nonconvex_hull(england %>%
                                    st_make_valid() %>%
@@ -123,22 +201,92 @@ if(FALSE){
 #   10 * nepal_lattice_sfc$edge_len
 # )), # a shortcut for bnd1 and bnd2
 
-en_edge_len <- 200
+# en_edge_len <- 250
 
-hex_points <- fm_hexagon_lattice(bnd = england_bnd, edge_len = en_edge_len) # say 100m
-england_mesh <- fm_mesh_2d(loc = hex_points,
+
+if(file.exists("./data/england_mesh.rds")){
+  england_mesh <- readRDS("./data/england_mesh.rds")
+} else{
+england_mesh <- fm_mesh_2d(loc = hex_pts,
                            boundary = fm_extensions(england_bnd, c(
-                             en_edge_len,
-                             en_edge_len*50)),
-                             max.edge = c(en_edge_len*2, en_edge_len*50)
+                             edge_len_ldn*2.5,
+                             edge_len_ldn*200)),
+                             max.edge = c(edge_len_outside_ldn*1.1, edge_len_ldn*250)
                            )
+
+if(FALSE){
+  summary(st_area(fm_as_sfc(england_mesh)))
+}
 ggplot() +  
   gg(england_mesh) +
   geom_sf(data = england, fill = NA, colour = "black") +
   theme_minimal()
-ggsave("england_mesh.png", dpi = 300, width = 24, height = 16)
+ggsave("england_mesh_mix.png", dpi = 300, width = 32, height = 24)
 
-saveRDS(england_mesh, file = "england_mesh.rds")
+saveRDS(england_mesh, file = "england_mesh_mix.rds")
+}
+
+
+
+
+# alternative bnd and mesh---------------------------------------------------------
+
+if(FALSE){
+  if (file.exists("./data/england_buffer2.shp")) {
+    england_buffer2 <- st_read("./data/england_buffer2.shp")
+  } else {
+    buffer_len <- .005
+    england_buffer2 <- england %>%
+      st_make_valid() %>%
+      st_union() %>%
+      fm_nonconvex_hull(convex = -buffer_len)
+    
+    england_buffer2 <- st_zm(england_buffer2, drop = TRUE, what = "ZM")
+    
+    st_write(england_buffer2, "./data/england_buffer2.shp", delete_dsn = TRUE)
+    
+    ggplot() + geom_sf(data = england_buffer2, fill = "steelblue", colour = "white", linewidth = 0.2) +
+      geom_sf(data = england, fill = NA, colour = "black")
+    ggsave("england_bnd2.pdf")
+  }
+  
+}
+
+england_bnd2 <- fm_nonconvex_hull(england %>%
+                                   st_make_valid() %>%
+                                   st_union(), convex = -.008)
+
+ggplot(england_bnd2) +
+  geom_sf(fill = "steelblue", colour = "white", linewidth = 0.2) +
+  geom_sf(data = england, fill = NA, colour = "black") +
+  theme_minimal()
+ggsave("england_bnd2.pdf")
+
+
+
+if(file.exists("./data/england_mesh2.rds")){
+  england_mesh2 <- readRDS("./data/england_mesh2.rds")
+} else{
+  england_mesh2 <- fm_mesh_2d(loc = hex_pts,
+                             boundary = fm_extensions(england_bnd2, c(
+                               0,
+                               edge_len_ldn*200)),
+                             max.edge = c(edge_len_outside_ldn*2, edge_len_ldn*250),
+                             cutoff = edge_len_ldn*.9
+  )
+  
+  if(FALSE){
+    summary(st_area(fm_as_sfc(england_mesh2)))
+  }
+  ggplot() +  
+    gg(england_mesh2) +
+    geom_sf(data = england, fill = NA, colour = "black") +
+    theme_minimal()
+  ggsave("england_mesh3_mix.png", dpi = 300, width = 32, height = 24)
+  
+  saveRDS(england_mesh2, file = "england_mesh2_mix.rds")
+}
+
 
 # Greenspace --------------------------------------------------------------
 
