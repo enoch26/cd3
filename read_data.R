@@ -65,6 +65,8 @@ gb %<-% {
 }
 england <- gb[1,]
 
+plot(england %>% st_union())
+
 lsoa %<-% st_read("./data/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BFE_V10_7644382385641440432/LSOA_2021_EW_BFE_V10.shp")
 
 # checking area 
@@ -138,7 +140,7 @@ if(FALSE){
   edge_len_outside_ldn <- edge_len_ldn * 2.9 
   
   hex_pts_ldn <- fm_hexagon_lattice(bnd = lsoa_ldn, edge_len = edge_len_ldn)
-  hex_pts_outside_ldn <- fm_hexagon_lattice(bnd = lsoa_outside_ldn, edge_len = edge_len_outside_ldn)
+  hex_pts_outside_ldn <- fm_hexagon_lattice(bnd = lsoa_outside_ldn, edge_len = edge_len_outside_ldn) %>% st_intersection(gb)
   hex_pts <- c(hex_pts_ldn, hex_pts_outside_ldn)
 # }
 
@@ -210,8 +212,9 @@ if(file.exists("./data/england_mesh.rds")){
 england_mesh <- fm_mesh_2d(loc = hex_pts,
                            boundary = fm_extensions(england_bnd, c(
                              edge_len_ldn*2.5,
-                             edge_len_ldn*200)),
-                             max.edge = c(edge_len_outside_ldn*1.1, edge_len_ldn*250)
+                             edge_len_ldn*300)),
+                             max.edge = c(edge_len_outside_ldn*1.1, edge_len_ldn*350),
+                           cutoff = edge_len_ldn*0.9
                            )
 
 if(FALSE){
@@ -247,14 +250,13 @@ if(FALSE){
     
     ggplot() + geom_sf(data = england_buffer2, fill = "steelblue", colour = "white", linewidth = 0.2) +
       geom_sf(data = england, fill = NA, colour = "black")
-    ggsave("england_bnd2.pdf")
+    ggsave("england_buffer2.pdf")
   }
   
 }
 
-england_bnd2 <- fm_nonconvex_hull(england %>%
-                                   st_make_valid() %>%
-                                   st_union(), convex = -.008)
+england_bnd2 <- fm_nonconvex_hull(england %>% st_union() %>% st_cast("POLYGON"), convex = 6000)
+
 
 ggplot(england_bnd2) +
   geom_sf(fill = "steelblue", colour = "white", linewidth = 0.2) +
@@ -267,12 +269,22 @@ ggsave("england_bnd2.pdf")
 if(file.exists("./data/england_mesh2.rds")){
   england_mesh2 <- readRDS("./data/england_mesh2.rds")
 } else{
-  england_mesh2 <- fm_mesh_2d(loc = hex_pts,
-                             boundary = fm_extensions(england_bnd2, c(
-                               0,
-                               edge_len_ldn*200)),
-                             max.edge = c(edge_len_outside_ldn*2, edge_len_ldn*250)
+  england_mesh2 <- fm_mesh_2d(loc = hex_pts %>% st_intersection(england_bnd2),
+                             boundary = list(england_bnd2, 
+                                             fm_nonconvex_hull(england_bnd2,
+                                                               24000)),
+                             max.edge = c(edge_len_outside_ldn*2, edge_len_ldn*250),
+                             cutoff = edge_len_ldn*0.9
   )
+  
+  if(FALSE){
+    ggplot() + gg(st_as_sf(fm_nonconvex_hull(england_bnd2,
+                                             edge_len_ldn*200))) +
+      gg(st_as_sf(england_bnd2))
+    ggsave("england_bnd2_ext.pdf")
+  }
+
+
   
   if(FALSE){
     summary(st_area(fm_as_sfc(england_mesh2)))
