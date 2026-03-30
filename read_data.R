@@ -65,7 +65,9 @@ gb %<-% {
 }
 england <- gb[1,]
 
-plot(england %>% st_union())
+if(FALSE){
+  plot(england %>% st_union())
+}
 
 lsoa %<-% st_read("./data/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BFE_V10_7644382385641440432/LSOA_2021_EW_BFE_V10.shp")
 
@@ -140,11 +142,13 @@ if(FALSE){
   edge_len_outside_ldn <- edge_len_ldn * 2.9 
   
   hex_pts_ldn <- fm_hexagon_lattice(bnd = lsoa_ldn, edge_len = edge_len_ldn)
-  hex_pts_outside_ldn <- fm_hexagon_lattice(bnd = lsoa_outside_ldn, edge_len = edge_len_outside_ldn) %>% st_intersection(gb)
+  hex_pts_outside_ldn <- fm_hexagon_lattice(bnd = lsoa_outside_ldn, 
+                                            edge_len = edge_len_outside_ldn) %>% 
+    st_intersection(gb)
   hex_pts <- c(hex_pts_ldn, hex_pts_outside_ldn)
-# }
-
-
+  # }
+  
+  
 # st_area(lsoa)
 # Min.   1st Qu.    Median      Mean   3rd Qu.      Max.
 # 9719    274400    468159   4321285   1397085 683774940
