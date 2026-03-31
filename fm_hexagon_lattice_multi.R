@@ -64,7 +64,7 @@
 #' 
 #' bnd_outer <- lapply(fm_extensions(cbind(0, 0), convex = c(3, 5)), st_as_sf)
 #' bnd_inner <- lapply(fm_extensions(cbind(0, 0), convex = c(1, 1.5)), st_as_sf)
-#' res <- fm_hex_lattice_multi(
+#' res <- fm_hexagon_lattice_multi(
 #'   sf_list = list(
 #'     bnd_outer2 = bnd_outer[[2]],
 #'     bnd_inner1 = bnd_inner[[1]],
@@ -94,7 +94,7 @@
 #'}
 #'
 #' @export
-fm_hex_lattice_multi <- function(
+fm_hexagon_lattice_multi <- function(
     sf_list,
     edge_len,
     clip_to = NULL,
@@ -284,16 +284,15 @@ fm_hex_lattice_multi <- function(
 }
 
 
-# example -----------------------------------------------------------------
+# example: all overlapped -----------------------------------------------------------------
 
 if(FALSE){
-  # edge_len_gb <- 1
   
   bnd_outer <- lapply(fm_extensions(cbind(0, 0), convex = c(3, 5)), st_as_sf)
   bnd_inner <- lapply(fm_extensions(cbind(0, 0), convex = c(1, 1.5)), st_as_sf)
   
   
-  res <- fm_hex_lattice_multi(
+  res <- fm_hexagon_lattice_multi(
     sf_list = list(
       bnd_outer2 = bnd_outer[[2]],
       bnd_inner1 = bnd_inner[[1]],
@@ -316,5 +315,42 @@ if(FALSE){
   )
   
   ggplot() + gg(bnd_outer[[2]], col="blue") + gg(mesh)
+}
+
+
+# example: partly overlapped ---------------------------------------------
+
+
+if(FALSE){
+  
+  bnd_outer <- lapply(fm_extensions(cbind(0, 0), convex = c(3, 5)), st_as_sf)
+  bnd_inner <- lapply(fm_extensions(cbind(4, 4), convex = c(1, 1.5)), st_as_sf)
+  
+  
+  res <- fm_hexagon_lattice_multi(
+    sf_list = list(
+      bnd_outer1 = bnd_outer[[1]],
+      bnd_outer2 = bnd_outer[[2]],
+      bnd_inner1 = bnd_inner[[1]],
+      bnd_inner2 = bnd_inner[[2]]
+    ),
+    edge_len = c(0.2, 0.5, 0.5, 0.1) 
+    # * edge_len_gb
+  )
+  
+  ggplot() + 
+    gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+    gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+    gg(st_as_sf(res$hex_combined), col = "black", size = 0.05)
+  
+  mesh <- fm_mesh_2d(
+    loc = res$hex_combined,
+    bnd = bnd_outer[[2]],
+    max_edge = 0.5
+  )
+  
+  ggplot() + 
+    gg(bnd_outer[[2]], col="blue") +
+    gg(mesh)
 }
 
