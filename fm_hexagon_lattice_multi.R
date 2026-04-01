@@ -15,7 +15,7 @@
 #'   passed to \code{fm_hexagon_lattice()}. If length 1, it is recycled to the
 #'   number of layers.
 #' @param clip_to Optional \code{sf} object used to clip cleaned boundaries
-#'   before hex lattice generation. Default is \code{NULL}.
+#'   before hexagon lattice generation. Default is \code{NULL}.
 #' @param return_order Character string, either \code{"input"} or
 #'   \code{"processed"}. If \code{"input"}, returned \code{cleaned} and
 #'   \code{hex} lists follow the original input order. If \code{"processed"},
@@ -71,7 +71,7 @@
 #'     bnd_outer1 = bnd_outer[[1]],
 #'     bnd_inner2 = bnd_inner[[2]]
 #'   ),
-#'   edge_len = c(0.2, 0.5, 0.5, 0.1) 
+#'   edge_len = c(0.2, 0.4, 0.4, 0.1) 
 #' )
 #'
 #' res$processed_names
@@ -86,8 +86,8 @@
 #' 
 #'   mesh <- fm_mesh_2d(
 #'   loc = res$hex_combined,
-#'   bnd = bnd_outer[[2]],
-#'   max_edge = 0.5
+#'   bnd = fm_extensions(cbind(0, 0), convex = c(5, 8)),
+#'   max_edge = c(0.5, 1)
 #'   )
 #'   
 #'     ggplot() + gg(bnd_outer[[2]], col="blue") + gg(mesh)
@@ -244,7 +244,7 @@ fm_hexagon_lattice_multi <- function(
     areas_proc <- areas_proc[keep]
   }
   
-  # hex lattice
+  # hexagon lattice
   hex_proc <- Map(
     function(bnd, e) fm_hexagon_lattice(bnd = bnd, edge_len = e),
     cleaned_proc,
@@ -291,7 +291,6 @@ if(FALSE){
   bnd_outer <- lapply(fm_extensions(cbind(0, 0), convex = c(3, 5)), st_as_sf)
   bnd_inner <- lapply(fm_extensions(cbind(0, 0), convex = c(1, 1.5)), st_as_sf)
   
-  
   res <- fm_hexagon_lattice_multi(
     sf_list = list(
       bnd_outer2 = bnd_outer[[2]],
@@ -299,8 +298,8 @@ if(FALSE){
       bnd_outer1 = bnd_outer[[1]],
       bnd_inner2 = bnd_inner[[2]]
     ),
-    edge_len = c(0.2, 0.5, 0.5, 0.1) 
-    # * edge_len_gb
+    edge_len = c(0.2, 0.4, 0.4, 0.1) 
+    # edge_len = c(0.2, 0.5, 0.5, 0.1) # slightly off for the mesh
     )
   
   ggplot() + 
@@ -310,22 +309,38 @@ if(FALSE){
   
   mesh <- fm_mesh_2d(
     loc = res$hex_combined,
-    bnd = bnd_outer[[2]],
-    max_edge = 0.5
+    bnd = st_as_sfc(bnd_outer[[2]]),
+    max_edge = c(0.5, 1)
   )
   
-  ggplot() + gg(bnd_outer[[2]], col="blue") + gg(mesh)
+  ggplot() +
+    gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+    gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+    gg(mesh)
+  
+  
+  mesh <- fm_mesh_2d(
+    loc = res$hex_combined,
+    boundary = fm_extensions(cbind(0, 0), convex = c(5, 8)),
+    max.edge = c(0.5,1)
+  )
+  
+  ggplot() + 
+    gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+    gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+    gg(mesh)
+  
+
 }
 
 
-# example: partly overlapped ---------------------------------------------
+# example: partially overlapped ---------------------------------------------
 
 
 if(FALSE){
   
   bnd_outer <- lapply(fm_extensions(cbind(0, 0), convex = c(3, 5)), st_as_sf)
   bnd_inner <- lapply(fm_extensions(cbind(4, 4), convex = c(1, 1.5)), st_as_sf)
-  
   
   res <- fm_hexagon_lattice_multi(
     sf_list = list(
@@ -351,6 +366,101 @@ if(FALSE){
   
   ggplot() + 
     gg(bnd_outer[[2]], col="blue") +
+    gg(bnd_inner[[2]], col="yellow") +
     gg(mesh)
 }
 
+
+# example: spatially varying mesh -----------------------------------------
+#   https://webhomes.maths.ed.ac.uk/~flindgre/posts/2018-07-22-spatially-varying-mesh-quality/
+# TODO may have to tune the parameters to make them look nicer 
+qual_loc <- function(loc) {
+  pmax(0.05, (loc[, 1] * 2 + loc[, 2]) / 16)
+}
+
+qual_bnd <- function(loc) {
+  rep(Inf, nrow(loc))
+}
+
+bnd <- fm_nonconvex_hull_inla(sf::st_coordinates(res$hex_combined), convex = 2, concave = 10)
+
+mesh1 <- fm_rcdt_2d(
+  loc = res$hex_combined,
+  boundary = bnd,
+  refine = list(
+    max.edge = Inf
+  ))
+
+ggplot() + 
+  gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+  gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+  gg(mesh1)
+
+mesh2 <- fm_rcdt_2d(
+  loc = res$hex_combined,
+  boundary = bnd,
+  refine = list(
+    max.edge = .5,
+    max.n.strict = 5000
+  )
+)
+
+ggplot() + 
+  gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+  gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+  gg(mesh2)
+
+mesh3 <- fm_rcdt_2d(
+  loc = res$hex_combined,
+  boundary = bnd,
+  refine = list(
+    max.edge = Inf,
+    max.n.strict = 5000
+  ),
+  quality.spec = list(
+    loc = qual_loc(sf::st_coordinates(res$hex_combined)),
+    segm = qual_loc(bnd$loc)
+  )
+)
+
+ggplot() + 
+  gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+  gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+  gg(mesh3)
+
+mesh4 <- fm_rcdt_2d(
+  loc = res$hex_combined,
+  boundary = bnd,
+  refine = list(
+    max.edge = Inf,
+    max.n.strict = 5000),
+  quality.spec = list(
+    loc = qual_loc(sf::st_coordinates(res$hex_combined)),
+    segm = qual_bnd(bnd$loc)
+  )
+)
+
+ggplot() + 
+  gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+  gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+  gg(mesh4)
+
+qual_bnd <- function(loc) {
+  pmax(0.1, 1 - abs(loc[, 2] / 10)^2)
+}
+mesh5 <- fm_rcdt_2d(
+  loc = res$hex_combined,
+  boundary = bnd,
+  refine = list(
+    max.edge = Inf,
+    max.n.strict = 5000),
+  quality.spec = list(
+    loc = qual_loc(sf::st_coordinates(res$hex_combined)),
+    segm = qual_bnd(bnd$loc)
+  )
+)
+
+ggplot() + 
+  gg(bnd_outer[[2]], col="blue") + gg(bnd_outer[[1]], col = "red") + 
+  gg(bnd_inner[[1]], col = "green") + gg(bnd_inner[[2]], col="yellow") + 
+  gg(mesh5)
