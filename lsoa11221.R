@@ -10,8 +10,6 @@
 # https://geoportal.statistics.gov.uk/datasets/ons::lower-layer-super-output-areas-december-2011-boundaries-ew-bfc-v3/about
 # https://data.london.gov.uk/dataset/2011-census-geography-boundary-files-29jwj/
 
-
-
 # set the scene -----------------------------------------------------------
 library(sf)
 library(dplyr)

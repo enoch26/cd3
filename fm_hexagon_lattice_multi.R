@@ -1,13 +1,27 @@
-#' Generate hexagon lattices of different edge lengths from multiple sf layers 
-#' without duplicate overlap coverage
-#' 
-#' Takes a list of polygonal \code{sf} objects, automatically resolves their
-#' processing order by dissolved area, removes overlap already covered by
-#' smaller layers, and applies \code{fm_hexagon_lattice()} to each resulting
-#' non-overlapping boundary.
+#' Generate hexagon lattices of different edge lengths from multiple sf layers
+#' without duplicating overlap coverage
 #'
-#' This ensures that overlapped regions are applied with fm_hexagon_lattice only 
-#' once across all inputs, even if the input list is supplied in any order.
+#' Takes a list of polygonal \code{sf} objects, automatically determines an
+#' internal processing order from their dissolved areas, removes overlap already
+#' claimed by smaller layers, and applies \code{fm_hexagon_lattice()} to each
+#' resulting non-overlapping boundary.
+#'
+#' Dissolved area here means the area of an \code{sf} object after merging all
+#' of its polygons into a single geometry, i.e. the area of the union of its
+#' component geometries. This provides a single total footprint for each input
+#' layer.
+#'
+#' The logic is based on an informed heuristic that smaller \code{sf} objects
+#' should usually take priority over larger enclosing ones, since smaller
+#' layers are typically assigned a higher mesh resolution. For example, if a
+#' small yellow circle overlaps a larger blue circle, the yellow circle should
+#' be retained first, while the blue circle contributes only its remaining
+#' non-overlapping area. This ensures that \code{fm_hexagon_lattice()} is
+#' applied only once within overlapping regions.
+#'
+#' Because priority is inferred from dissolved area rather than from the order
+#' of the supplied list, the function gives stable results even when the input
+#' \code{sf} objects are provided in different orders.
 #'
 #' @param sf_list A non-empty list of polygonal \code{sf} objects. All layers
 #'   must share the same CRS.
