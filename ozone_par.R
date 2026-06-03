@@ -1,15 +1,8 @@
 # =========================================================
-# Robust ozone extraction to LSOA polygons, parallel by year
-# - safer for HPC / sf / terra
-# - uses multisession, not multicore
-# - writes one GPKG per completed year
-# - writes one PNG per completed year
-# - tryCatch prevents one failed year killing all
+# Ozone extraction to LSOA polygons, parallel over years
+# Writes one GPKG and one PNG per completed year
 # =========================================================
 
-# -----------------------------
-# packages
-# -----------------------------
 library(sf)
 library(terra)
 library(here)
@@ -30,11 +23,13 @@ options(
   future.globals.maxSize = 8 * 1024^3
 )
 
-# use fewer than max for stability
-n_workers <- min(4, parallelly::availableCores())
-message("Workers used by this R session: ", n_workers)
+n_workers <- parallelly::availableCores()
+message("Workers available to this R session: ", n_workers)
 
-if (n_workers > 1) {
+if (.Platform$OS.type == "unix" && n_workers > 1) {
+  future::plan(future::multicore, workers = n_workers)
+  message("Running with multicore on ", n_workers, " workers")
+} else if (n_workers > 1) {
   future::plan(future::multisession, workers = n_workers)
   message("Running with multisession on ", n_workers, " workers")
 } else {
@@ -48,11 +43,9 @@ if (n_workers > 1) {
 data_dir <- file.path(here::here(), "data", "defra")
 out_dir  <- here::here("ozone_lsoa_yearly")
 plot_dir <- file.path(out_dir, "png")
-rds_dir  <- file.path(out_dir, "rds")
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
 
 files <- c(
   "mapdaysgt12003_2.csv",
@@ -143,23 +136,75 @@ read_ozone_csv_as_raster <- function(f) {
 }
 
 # -----------------------------
-# helper: save one png
+# helper: extract one year
+# -----------------------------
+extract_ozone_year <- function(i, files, data_dir, poly_sf) {
+  yr <- 2002 + i
+  f <- file.path(data_dir, "ozone", files[i])
+  
+  message("Year ", yr, ": reading ", basename(f))
+  
+  if (!file.exists(f)) {
+    stop(sprintf("Year %s: file not found: %s", yr, f))
+  }
+  
+  poly_vect <- terra::vect(poly_sf)
+  r <- read_ozone_csv_as_raster(f)
+  
+  vals <- terra::extract(
+    r, poly_vect,
+    fun = mean,
+    na.rm = TRUE,
+    ID = FALSE,
+    weights = TRUE,
+    exact = TRUE
+  )[[1]]
+  
+  miss1 <- is.na(vals)
+  if (any(miss1)) {
+    vals[miss1] <- terra::extract(
+      r, poly_vect[miss1],
+      fun = mean,
+      na.rm = TRUE,
+      ID = FALSE
+    )[[1]]
+  }
+  
+  miss2 <- is.na(vals)
+  if (any(miss2)) {
+    cent <- sf::st_centroid(poly_sf[miss2, ])
+    vals[miss2] <- terra::extract(
+      r,
+      terra::vect(cent),
+      ID = FALSE
+    )[[1]]
+  }
+  
+  list(
+    year = yr,
+    values = vals,
+    n_na = sum(is.na(vals))
+  )
+}
+
+# -----------------------------
+# helper: save plot
 # -----------------------------
 save_ozone_plot <- function(x, value_col, year, plot_file) {
-  p <- ggplot2::ggplot(x) +
-    ggplot2::geom_sf(ggplot2::aes(fill = .data[[value_col]]), color = NA) +
-    ggplot2::scale_fill_viridis_c(
+  p <- ggplot(x) +
+    geom_sf(aes(fill = .data[[value_col]]), color = NA) +
+    scale_fill_viridis_c(
       option = "C",
       na.value = "grey85",
       name = paste0("Ozone ", year)
     ) +
-    ggplot2::labs(
+    labs(
       title = paste("LSOA ozone exposure", year),
       subtitle = value_col
     ) +
-    ggplot2::theme_void() +
-    ggplot2::theme(
-      plot.title = ggplot2::element_text(face = "bold"),
+    theme_void() +
+    theme(
+      plot.title = element_text(face = "bold"),
       legend.position = "right"
     )
   
@@ -170,74 +215,6 @@ save_ozone_plot <- function(x, value_col, year, plot_file) {
     height = 10,
     dpi = 300
   )
-}
-
-# -----------------------------
-# helper: extract one year safely
-# -----------------------------
-extract_ozone_year <- function(i, files, data_dir, poly_sf) {
-  tryCatch({
-    yr <- 2002 + i
-    f <- file.path(data_dir, "ozone", files[i])
-    
-    message("Year ", yr, ": reading ", basename(f))
-    
-    if (!file.exists(f)) {
-      stop(sprintf("Year %s: file not found: %s", yr, f))
-    }
-    
-    # create terra objects inside worker
-    poly_vect <- terra::vect(poly_sf)
-    r <- read_ozone_csv_as_raster(f)
-    
-    # 1) weighted exact mean
-    vals <- terra::extract(
-      r, poly_vect,
-      fun = mean,
-      na.rm = TRUE,
-      ID = FALSE,
-      weights = TRUE,
-      exact = TRUE
-    )[[1]]
-    
-    # 2) fallback unweighted mean
-    miss1 <- is.na(vals)
-    if (any(miss1)) {
-      vals[miss1] <- terra::extract(
-        r, poly_vect[miss1],
-        fun = mean,
-        na.rm = TRUE,
-        ID = FALSE
-      )[[1]]
-    }
-    
-    # 3) fallback centroid value
-    miss2 <- is.na(vals)
-    if (any(miss2)) {
-      cent <- sf::st_centroid(poly_sf[miss2, ])
-      vals[miss2] <- terra::extract(
-        r,
-        terra::vect(cent),
-        ID = FALSE
-      )[[1]]
-    }
-    
-    list(
-      ok = TRUE,
-      year = yr,
-      values = vals,
-      n_na = sum(is.na(vals)),
-      error = NULL
-    )
-  }, error = function(e) {
-    list(
-      ok = FALSE,
-      year = 2002 + i,
-      values = NULL,
-      n_na = NA_integer_,
-      error = conditionMessage(e)
-    )
-  })
 }
 
 # -----------------------------
@@ -260,6 +237,7 @@ summary_list <- vector("list", length(futs))
 
 # -----------------------------
 # collect results as they finish
+# and write one year-specific file + png
 # -----------------------------
 while (!all(done)) {
   for (j in seq_along(futs)) {
@@ -267,11 +245,6 @@ while (!all(done)) {
       res <- future::value(futs[[j]])
       done[j] <- TRUE
       summary_list[[j]] <- res
-      
-      if (!isTRUE(res$ok)) {
-        message("Year ", res$year, " failed: ", res$error)
-        next
-      }
       
       yr_col <- paste0("ozone", res$year)
       
@@ -288,18 +261,13 @@ while (!all(done)) {
         paste0("ozone_lsoa_eng_", res$year, ".png")
       )
       
-      rds_file <- file.path(
-        rds_dir,
-        paste0("ozone_lsoa_eng_", res$year, ".rds")
-      )
-      
       message("Completed ", yr_col, "; remaining NAs = ", res$n_na)
-      
-      # write gpkg
       message("Writing ", gpkg_file)
+      
       if (file.exists(gpkg_file)) {
         file.remove(gpkg_file)
       }
+      
       sf::st_write(
         out_sf,
         gpkg_file,
@@ -307,7 +275,6 @@ while (!all(done)) {
         quiet = FALSE
       )
       
-      # save png
       message("Saving plot ", png_file)
       save_ozone_plot(
         x = out_sf,
@@ -315,14 +282,6 @@ while (!all(done)) {
         year = res$year,
         plot_file = png_file
       )
-      
-      # save rds checkpoint
-      saveRDS(out_sf, rds_file)
-      message("Saved checkpoint ", rds_file)
-      
-      # clean up
-      rm(out_sf)
-      invisible(gc())
     }
   }
   
@@ -333,20 +292,12 @@ while (!all(done)) {
 # summary
 # -----------------------------
 summary_df <- data.frame(
-  year = vapply(summary_list, function(x) x$year, integer(1)),
-  ok   = vapply(summary_list, function(x) isTRUE(x$ok), logical(1)),
-  n_na = vapply(summary_list, function(x) {
-    if (is.null(x$n_na)) NA_integer_ else x$n_na
-  }, integer(1)),
-  error = vapply(summary_list, function(x) {
-    if (is.null(x$error)) NA_character_ else ifelse(is.null(x$error), NA_character_, x$error)
-  }, character(1))
+  year = vapply(summary_list, `[[`, integer(1), "year"),
+  n_na  = vapply(summary_list, `[[`, integer(1), "n_na")
 )
 
 summary_df <- summary_df[order(summary_df$year), ]
 print(summary_df)
 
-message("Done.")
-message("GPKG files: ", out_dir)
-message("PNG files: ", plot_dir)
-message("RDS checkpoints: ", rds_dir)
+message("Done. Yearly files written to: ", out_dir)
+message("PNG maps written to: ", plot_dir)
