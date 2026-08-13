@@ -113,6 +113,8 @@ data <- fingertips_data(
   AreaTypeID = "All"
 )
 
+
+
 write.csv(data, "fingertipsR.csv", row.names = FALSE)
 
 
