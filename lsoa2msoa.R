@@ -55,7 +55,13 @@ aggregate_lsoa_to_msoa <- function(
       summarise(
         across(
           all_of(copy_vars),
-          ~ if (dplyr::n_distinct(.x, na.rm = TRUE) == 1) dplyr::first(.x) else NA
+          ~ {
+            if (dplyr::n_distinct(.x, na.rm = TRUE) == 1) {
+              dplyr::first(.x)
+            } else {
+              .x[NA_integer_]
+            }
+          }
         ),
         .groups = "drop"
       )
