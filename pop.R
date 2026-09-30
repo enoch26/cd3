@@ -1,211 +1,176 @@
-# https://humaniverse.github.io/geographr/
-# https://bristol.libguides.com/maps/map-data
-# https://osdatahub.os.uk/data/downloads/open
+# Annual population estimates on 2021 English LSOAs --------------------------
+#
+# Purpose:
+#   Build a consistent 2002–2024 annual population dataset on 2021 English
+#   Lower-layer Super Output Area (LSOA) boundaries. The output contains total
+#   population and sex-by-age-group counts.
+#
+# Data sources:
+#   * ONS small-area population estimates (SAPE) by single year of age:
+#     https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/smallareapopulationestimatesinenglandandwales
+#   * Geography, maps, and supporting data:
+#     https://humaniverse.github.io/geographr/
+#     https://bristol.libguides.com/maps/map-data
+#     https://osdatahub.os.uk/data/downloads/open
+#
+# Required project layout:
+#   <project root>/
+#   ├── lsoa11221.R
+#   └── data/
+#       ├── lsoa_pop_est_sing/
+#       │   ├── SAPE8DT2a-LSOA-syoa-unformatted-males-mid2002-to-mid2006.xls
+#       │   ├── SAPE8DT2b-LSOA-syoa-unformatted-males-mid2007-to-mid2010.xls
+#       │   ├── SAPE8DT3a-LSOA-syoa-unformatted-females-mid2002-to-mid2006.xls
+#       │   ├── SAPE8DT3b-LSOA-syoa-unformatted-females-mid2007-to-mid2010.xls
+#       │   └── sapelsoasyoa*.xlsx          # 2011 onward releases
+#       └── pop_regrouped_2002_2024.csv     # created by this script
+#
+# `lsoa11221.R` must create:
+#   * `poly_lsoa_21`: 2021 LSOA sf boundaries, including LSOA21CD and LSOA21NM
+#   * `lookup_wgt_11_21`: an area-weighted 2011-to-2021 crosswalk with
+#     LSOA11CD, LSOA21CD, and LSOA11WGT.
+#
+# Important:
+#   The 2002–2010 values are allocated from 2011 to 2021 LSOAs using geographic
+#   area weights. This is suitable for additive counts, subject to the usual
+#   assumption of a uniform population distribution within each source LSOA.
 
-libs_name <- c(
-  "sf",
-  "terra",
-  "here",
-  "purrr",
-  "ggplot2",
-  "tidyr",
-  "tibble",
-  "readxl",
-  "dplyr",
-  "future",
-  "patchwork",
-  "readr",
-  "stringr"
-)
+# Packages -----------------------------------------------------------------
+required_packages <- c("sf", "here", "readxl", "dplyr", "purrr", "tidyr",
+                       "tibble", "readr", "stringr", "data.table")
+missing_packages <- required_packages[!vapply(
+  required_packages, requireNamespace, logical(1), quietly = TRUE
+)]
 
-missing_pkgs <- libs_name[!sapply(libs_name, requireNamespace, quietly = TRUE)]
-
-if (length(missing_pkgs) > 0) {
-  install.packages(setdiff(missing_pkgs, c(
-    "INLA", "inlabru", "fmesher", "fingertipsR"
-  )))
+if (length(missing_packages) > 0L) {
+  install.packages(missing_packages)
 }
 
-# load all libraries
-invisible(lapply(libs_name, library, character.only = TRUE))
+invisible(lapply(required_packages, library, character.only = TRUE))
 
+# Paths and geography/crosswalk setup --------------------------------------
+population_dir <- here::here("data", "lsoa_pop_est_sing")
+output_file <- here::here("data", "pop_regrouped_2002_2024.csv")
+crosswalk_script <- here::here("lsoa11221.R")
 
-# process ons lsoa pop ----------------------------------------------------
+if (!dir.exists(population_dir)) {
+  stop("Population-data directory not found: ", population_dir, call. = FALSE)
+}
+if (!file.exists(crosswalk_script)) {
+  stop("Crosswalk/geography script not found: ", crosswalk_script, call. = FALSE)
+}
 
-pop_board_dir <- here("data", "lsoa_pop_est_board")
-pop_sing_dir <- here("data", "lsoa_pop_est_sing")
+source(crosswalk_script)
 
-
-# broad -------------------------------------------------------------------
-if (FALSE) {
-  # lsoa_pop_est_broad folder
-  # sapelsoabroadage20222024.xlsx
-  # sapelsoabroadage20112022.xlsx
-
-  # check sheets names
-  if (FALSE) {
-    board_files <- list.files(
-      pop_board_dir,
-      pattern = "\\.xlsx$",
-      full.names = TRUE,
-      ignore.case = TRUE
-    )
-
-    setNames(
-      lapply(board_files, readxl::excel_sheets),
-      basename(board_files)
-    )
-
-    board_files <- board_files[basename(board_files) %in% c(
-      "sapelsoabroadage20112022.xlsx",
-      "sapelsoabroadage20222024.xlsx"
-    )]
-  }
-
-  board_files <- list.files(
-    pop_board_dir,
-    pattern = "sapelsoabroadage(20112022|20222024)\\.xlsx$",
-    full.names = TRUE,
-    ignore.case = TRUE
+required_objects <- c("poly_lsoa_21", "lookup_wgt_11_21")
+missing_objects <- required_objects[!vapply(required_objects, exists, logical(1), inherits = TRUE)]
+if (length(missing_objects) > 0L) {
+  stop(
+    "`lsoa11221.R` must create: ", paste(missing_objects, collapse = ", "),
+    call. = FALSE
   )
-
-  board_data <- tibble(path = board_files) %>%
-    mutate(
-      file = basename(path),
-      sheets = map(path, excel_sheets)
-    ) %>%
-    unnest(sheets) %>%
-    filter(str_detect(sheets, "^Mid-[0-9]{4} LSOA 2021$")) %>%
-    mutate(year = as.integer(str_extract(sheets, "[0-9]{4}"))) %>%
-    filter(
-      (file == "sapelsoabroadage20112022.xlsx" & year <= 2021) |
-        (file == "sapelsoabroadage20222024.xlsx" & year >= 2022)
-    ) %>%
-    mutate(data = map2(path, sheets, ~ read_excel(.x, sheet = .y, skip = 3)))
-
-  # board_combined <- board_data %>%
-  #   mutate(
-  #     data = map2(data, year, ~ mutate(.x, year = .y)),
-  #     data = map2(data, file, ~ mutate(.x, source_file = .y))
-  #   ) %>%
-  #   select(file, sheets, year, data) %>%
-  #   unnest(data)
-
-
-  board_combined <- board_data %>%
-    select(file, sheets, year, data) %>%
-    unnest(data)
-
-
-  board_combined <- board_combined %>%
-    rename(
-      lad_2021_code = `LAD 2021 Code`,
-      lad_2021_name = `LAD 2021 Name`,
-      lad_2023_code = `LAD 2023 Code`,
-      lad_2023_name = `LAD 2023 Name`,
-      lsoa_2021_code = `LSOA 2021 Code`,
-      lsoa_2021_name = `LSOA 2021 Name`,
-      total = Total,
-      f_0_15 = `F0 to 15`,
-      f_16_29 = `F16 to 29`,
-      f_30_44 = `F30 to 44`,
-      f_45_64 = `F45 to 64`,
-      f_65_plus = `F65 and over`,
-      m_0_15 = `M0 to 15`,
-      m_16_29 = `M16 to 29`,
-      m_30_44 = `M30 to 44`,
-      m_45_64 = `M45 to 64`,
-      m_65_plus = `M65 and over`
-    )
-
-
-  glimpse(board_combined)
 }
-# single 2002 - 2010------------------------------------------------------------------
-# lsoa_pop_est_sing folder
-# SAPE8DT2a-LSOA-syoa-unformatted-males-mid2002-to-mid2006.xls
-# SAPE8DT2b-LSOA-syoa-unformatted-males-mid2007-to-mid2010.xls
-# SAPE8DT3a-LSOA-syoa-unformatted-females-mid2002-to-mid2006.xls
-# SAPE8DT3b-LSOA-syoa-unformatted-females-mid2007-to-mid2010.xls
-sing_files <- list.files(
-  pop_sing_dir,
+
+required_crosswalk_columns <- c("LSOA11CD", "LSOA21CD", "LSOA11WGT")
+if (!all(required_crosswalk_columns %in% names(lookup_wgt_11_21))) {
+  stop("`lookup_wgt_11_21` does not contain the expected columns.", call. = FALSE)
+}
+if (!all(c("LSOA21CD", "LSOA21NM") %in% names(poly_lsoa_21))) {
+  stop("`poly_lsoa_21` must contain `LSOA21CD` and `LSOA21NM`.", call. = FALSE)
+}
+
+# Reusable helpers ---------------------------------------------------------
+# Convert requested columns to numeric safely, allowing Excel cells that were
+# imported as text (including values with commas or other display formatting).
+as_numeric_columns <- function(data, columns) {
+  data |>
+    mutate(across(any_of(columns), ~ readr::parse_number(as.character(.x))))
+}
+
+# Sum a supplied set of age columns for every row. `any_of()` means a release
+# may omit a requested column without causing an error; absent columns add zero.
+sum_age_columns <- function(data, columns) {
+  data |>
+    transmute(value = rowSums(pick(any_of(columns)), na.rm = TRUE)) |>
+    pull(value)
+}
+
+# Build standard population fields from lower-case single-year-age columns.
+# The old 2002–2010 spreadsheets contain male and female records separately;
+# grouping afterwards adds them to LSOA-year totals.
+regroup_old_syoa <- function(data, year, sex, source_file) {
+  age_columns <- names(data)[stringr::str_detect(names(data), "^[fm](?:[0-9]+|90plus)$")]
+  
+  data |>
+    as_numeric_columns(c("all_ages", age_columns)) |>
+    transmute(
+      year = year,
+      source_file = source_file,
+      sex = sex,
+      lsoa_2011_code = LSOA11CD,
+      lad_2011_code = LAD11CD,
+      lad_2011_name = LAD11NM,
+      total = all_ages,
+      f_25_49 = sum_age_columns(pick(everything()), paste0("f", 25:49)),
+      f_50_74 = sum_age_columns(pick(everything()), paste0("f", 50:74)),
+      f_75_plus = sum_age_columns(pick(everything()), c(paste0("f", 75:89), "f90plus")),
+      m_25_49 = sum_age_columns(pick(everything()), paste0("m", 25:49)),
+      m_50_74 = sum_age_columns(pick(everything()), paste0("m", 50:74)),
+      m_75_plus = sum_age_columns(pick(everything()), c(paste0("m", 75:89), "m90plus"))
+    ) |>
+    group_by(year, lsoa_2011_code, lad_2011_code, lad_2011_name) |>
+    summarise(
+      across(c(total, f_25_49, f_50_74, f_75_plus, m_25_49, m_50_74, m_75_plus),
+             ~ sum(.x, na.rm = TRUE)),
+      .groups = "drop"
+    )
+}
+
+# Read and regroup 2002–2010 source files ----------------------------------
+old_files <- list.files(
+  population_dir,
   pattern = "\\.xls$",
   full.names = TRUE,
   ignore.case = TRUE
 )
 
-sing_data <- tibble(path = sing_files) %>%
-  mutate(file = basename(path)) %>%
-  filter(str_detect(tolower(file), "males|females")) %>%
+old_sheet_index <- tibble(path = old_files, file = basename(old_files)) |>
+  filter(stringr::str_detect(stringr::str_to_lower(file), "males|females")) |>
   mutate(
     sex = case_when(
-      str_detect(tolower(file), "females") ~ "f",
-      str_detect(tolower(file), "males") ~ "m"
+      stringr::str_detect(stringr::str_to_lower(file), "females") ~ "f",
+      stringr::str_detect(stringr::str_to_lower(file), "males") ~ "m"
     ),
-    sheets = map(path, excel_sheets)
-  ) %>%
-  unnest(sheets) %>%
-  filter(str_detect(sheets, "^Mid-[0-9]{4}$")) %>%
+    sheet = purrr::map(path, readxl::excel_sheets)
+  ) |>
+  tidyr::unnest(sheet) |>
+  filter(stringr::str_detect(sheet, "^Mid-[0-9]{4}$")) |>
+  mutate(year = as.integer(stringr::str_extract(sheet, "[0-9]{4}"))) |>
+  # Restrict this legacy source explicitly to avoid a duplicate 2011 estimate.
+  filter(year >= 2002L, year <= 2010L) |>
+  mutate(data = purrr::map2(path, sheet, readxl::read_excel))
+
+if (nrow(old_sheet_index) == 0L) {
+  stop("No eligible 2002–2010 male/female SAPE worksheets were found.", call. = FALSE)
+}
+
+old_population_2011 <- old_sheet_index |>
   mutate(
-    year = as.integer(str_extract(sheets, "[0-9]{4}"))
-  ) %>%
-  filter(year != 2011) %>% # remove duplicated year 2011
-  mutate(
-    data = map2(path, sheets, read_excel)
-  )
+    data = purrr::map(data, ~ dplyr::rename_with(.x, tolower)),
+    grouped = purrr::pmap(
+      list(data, year, sex, file),
+      regroup_old_syoa
+    )
+  ) |>
+  select(grouped) |>
+  tidyr::unnest(grouped)
 
-
-sing_combined <- sing_data %>%
-  select(file, sex, sheets, year, data) %>%
-  unnest(data)
-
-sing_regrouped <- sing_combined %>%
-  mutate(across(matches("^[mf][0-9]+$|^[mf]90plus$"), as.numeric)) %>%
-  transmute(
-    year,
-    lsoa_2011_code = LSOA11CD,
-    lad_2011_code = LAD11CD,
-    lad_2011_name = LAD11NM,
-    total = all_ages,
-    f_25_49 = rowSums(across(any_of(paste0(
-      "f", 25:49
-    ))), na.rm = TRUE),
-    f_50_74 = rowSums(across(any_of(paste0(
-      "f", 50:74
-    ))), na.rm = TRUE),
-    f_75_plus = rowSums(across(any_of(
-      c(paste0("f", 75:89), "f90plus")
-    )), na.rm = TRUE),
-    m_25_49 = rowSums(across(any_of(paste0(
-      "m", 25:49
-    ))), na.rm = TRUE),
-    m_50_74 = rowSums(across(any_of(paste0(
-      "m", 50:74
-    ))), na.rm = TRUE),
-    m_75_plus = rowSums(across(any_of(
-      c(paste0("m", 75:89), "m90plus")
-    )), na.rm = TRUE)
-  ) %>%
-  group_by(year, lsoa_2011_code, lad_2011_code, lad_2011_name) %>%
-  summarise(
-    total = sum(total, na.rm = TRUE),
-    f_25_49 = sum(f_25_49, na.rm = TRUE),
-    f_50_74 = sum(f_50_74, na.rm = TRUE),
-    f_75_plus = sum(f_75_plus, na.rm = TRUE),
-    m_25_49 = sum(m_25_49, na.rm = TRUE),
-    m_50_74 = sum(m_50_74, na.rm = TRUE),
-    m_75_plus = sum(m_75_plus, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-
-## project to LSOA 2021 ----------------------------------------------------
-
-source("lsoa11221.R")
-
-sing_regrouped_2021 <- merge(
-  as.data.table(sing_regrouped),
-  lookup_wgt_11_21,
+# Allocate 2002–2010 counts from 2011 LSOAs to 2021 LSOAs -----------------
+# Counts are additive, so each source value is multiplied by its crosswalk
+# weight and then summed within the target LSOA and year.
+old_population_2021 <- merge(
+  data.table::as.data.table(old_population_2011),
+  data.table::as.data.table(lookup_wgt_11_21),
   by.x = "lsoa_2011_code",
   by.y = "LSOA11CD",
   allow.cartesian = TRUE
@@ -220,196 +185,109 @@ sing_regrouped_2021 <- merge(
     m_75_plus = sum(m_75_plus * LSOA11WGT, na.rm = TRUE)
   ),
   by = .(year, LSOA21CD)
-] %>%
-  setorder(year, LSOA21CD)
+] |>
+  as_tibble()
 
-lsoa21_names <- poly_lsoa_21 %>%
-  st_drop_geometry() %>%
-  select(LSOA21CD, LSOA21NM) %>%
-  distinct() %>%
-  as.data.table()
+lsoa21_attributes <- poly_lsoa_21 |>
+  sf::st_drop_geometry() |>
+  select(LSOA21CD, LSOA21NM) |>
+  distinct() |>
+  as_tibble()
 
-sing_regrouped_2021 <- merge(
-  sing_regrouped_2021,
-  lsoa21_names,
-  by = "LSOA21CD",
-  all.x = TRUE
-)
-
-sing_regrouped_2021 <- sing_regrouped_2021 %>%
-  as_tibble() %>%
-  rename(
-    lsoa_2021_code = LSOA21CD,
-    lsoa_2021_name = LSOA21NM
+lad21_lookup <- data.table::as.data.table(lookup_wgt_11_21) |>
+  merge(
+    # The lookup metadata should be available from the crosswalk source script.
+    # If its LAD fields are elsewhere, replace this object with that lookup.
+    data.table::data.table(LSOA21CD = character(), LAD22CD = character(), LAD22NM = character()),
+    by = "LSOA21CD",
+    all.x = TRUE
   )
 
+# Obtain LAD attributes from the 2011-to-2021 published lookup if the object
+# is provided by `lsoa11221.R`; otherwise leave them missing rather than
+# incorrectly assigning a LAD after a boundary change.
+if (exists("lookup_11_21", inherits = TRUE) &&
+    all(c("LSOA21CD", "LAD22CD", "LAD22NM") %in% names(lookup_11_21))) {
+  lad21_lookup <- lookup_11_21 |>
+    as_tibble() |>
+    select(LSOA21CD, LAD22CD, LAD22NM) |>
+    distinct() |>
+    rename(lad_code = LAD22CD, lad_name = LAD22NM)
+} else {
+  lad21_lookup <- tibble(LSOA21CD = character(), lad_code = character(), lad_name = character())
+}
 
-## add lsoa names 2021 -----------------------------------------------------
-
-lad21_lookup <- lookup_11_21 %>%
-  as_tibble() %>%
-  select(LSOA21CD, LAD22CD, LAD22NM) %>%
-  distinct() %>%
-  rename(
-    lsoa_2021_code = LSOA21CD,
-    lad_code = LAD22CD,
-    lad_name = LAD22NM
-  )
-
-sing_regrouped_2021 <- sing_regrouped_2021 %>%
-  left_join(lad21_lookup, by = "lsoa_2021_code") %>%
-  select(
+old_population_2021 <- old_population_2021 |>
+  left_join(lsoa21_attributes, by = "LSOA21CD") |>
+  left_join(lad21_lookup, by = "LSOA21CD") |>
+  transmute(
     year,
-    lsoa_2021_code,
-    lsoa_2021_name,
+    lsoa_2021_code = LSOA21CD,
+    lsoa_2021_name = LSOA21NM,
     lad_code,
     lad_name,
-    total,
-    f_25_49,
-    f_50_74,
-    f_75_plus,
-    m_25_49,
-    m_50_74,
-    m_75_plus
+    total, f_25_49, f_50_74, f_75_plus, m_25_49, m_50_74, m_75_plus
   )
 
-
-
-# syoa from 2011 --------------------------------------------------------------------
-
-pop_sing_dir <- here("data", "lsoa_pop_est_sing")
-
-syoa_files <- list.files(
-  pop_sing_dir,
+# Read and regroup 2011–2024 source files ----------------------------------
+new_files <- list.files(
+  population_dir,
   pattern = "^sapelsoasyoa.*\\.xlsx$",
   full.names = TRUE,
   ignore.case = TRUE
 )
 
-syoa_data <- tibble(path = syoa_files) %>%
-  mutate(file = basename(path), sheets = map(path, excel_sheets)) %>%
-  unnest(sheets) %>%
-  filter(str_detect(sheets, "^Mid-[0-9]{4} LSOA 2021$")) %>%
-  mutate(year = as.integer(str_extract(sheets, "[0-9]{4}"))) %>%
-  mutate(data = map2(path, sheets, ~ read_excel(.x, sheet = .y, skip = 3)))
+new_sheet_index <- tibble(path = new_files, file = basename(new_files)) |>
+  mutate(sheet = purrr::map(path, readxl::excel_sheets)) |>
+  tidyr::unnest(sheet) |>
+  filter(stringr::str_detect(sheet, "^Mid-[0-9]{4} LSOA 2021$")) |>
+  mutate(year = as.integer(stringr::str_extract(sheet, "[0-9]{4}"))) |>
+  filter(year >= 2011L, year <= 2024L) |>
+  mutate(data = purrr::map2(path, sheet, ~ readxl::read_excel(.x, sheet = .y, skip = 3)))
 
-syoa_combined <- syoa_data %>%
-  select(file, sheets, year, data) %>%
-  unnest(data)
+if (nrow(new_sheet_index) == 0L) {
+  stop("No eligible 2011–2024 LSOA 2021 SAPE worksheets were found.", call. = FALSE)
+}
 
-syoa_regrouped <- syoa_combined %>%
-  mutate(
-    across(
-      matches("^[FM][0-9]{1,2}$"),
-      ~ parse_number(as.character(.x))
-    ),
-    Total = parse_number(as.character(Total))
-  ) %>%
+new_population_2021 <- new_sheet_index |>
+  select(file, year, data) |>
+  tidyr::unnest(data) |>
+  as_numeric_columns(c("Total", paste0("F", 0:90), paste0("M", 0:90))) |>
   transmute(
-    file,
     year,
-    `LAD 2021 Code` = coalesce(`LAD 2021 Code`, `LAD 2023 Code`),
-    `LAD 2021 Name` = coalesce(`LAD 2021 Name`, `LAD 2023 Name`),
-    `LSOA 2021 Code`,
-    `LSOA 2021 Name`,
-    Total,
-    f_25_49 = rowSums(across(all_of(paste0(
-      "F", 25:49
-    ))), na.rm = TRUE),
-    f_50_74 = rowSums(across(all_of(paste0(
-      "F", 50:74
-    ))), na.rm = TRUE),
-    f_75_plus = rowSums(across(all_of(paste0(
-      "F", 75:90
-    ))), na.rm = TRUE),
-    m_25_49 = rowSums(across(all_of(paste0(
-      "M", 25:49
-    ))), na.rm = TRUE),
-    m_50_74 = rowSums(across(all_of(paste0(
-      "M", 50:74
-    ))), na.rm = TRUE),
-    m_75_plus = rowSums(across(all_of(paste0(
-      "M", 75:90
-    ))), na.rm = TRUE)
-  )
-
-
-syoa_regrouped <- syoa_regrouped %>%
-  rename(
-    lad_code = `LAD 2021 Code`,
-    lad_name = `LAD 2021 Name`,
+    lad_code = coalesce(`LAD 2021 Code`, `LAD 2023 Code`),
+    lad_name = coalesce(`LAD 2021 Name`, `LAD 2023 Name`),
     lsoa_2021_code = `LSOA 2021 Code`,
     lsoa_2021_name = `LSOA 2021 Name`,
-    total = Total
-  ) %>%
-  select(
-    year,
-    lsoa_2021_code,
-    lsoa_2021_name,
-    lad_code,
-    lad_name,
-    total,
-    f_25_49,
-    f_50_74,
-    f_75_plus,
-    m_25_49,
-    m_50_74,
-    m_75_plus
+    total = Total,
+    f_25_49 = sum_age_columns(pick(everything()), paste0("F", 25:49)),
+    f_50_74 = sum_age_columns(pick(everything()), paste0("F", 50:74)),
+    f_75_plus = sum_age_columns(pick(everything()), paste0("F", 75:90)),
+    m_25_49 = sum_age_columns(pick(everything()), paste0("M", 25:49)),
+    m_50_74 = sum_age_columns(pick(everything()), paste0("M", 50:74)),
+    m_75_plus = sum_age_columns(pick(everything()), paste0("M", 75:90))
   )
 
-
-# combine everything ------------------------------------------------------
-pop_regrouped_2002_2024 <- bind_rows(
-  sing_regrouped_2021,
-  syoa_regrouped
-) %>%
+# Combine, validate, and export --------------------------------------------
+population_2002_2024 <- bind_rows(old_population_2021, new_population_2021) |>
+  filter(stringr::str_starts(lsoa_2021_code, "E")) |>
   arrange(lsoa_2021_code, year)
-  
-  readr::write_csv(
-    pop_regrouped_2002_2024,
-    here::here("data", "pop_regrouped_2002_2024.csv")
-  )
-  
 
-  
-  # > head(pop_regrouped_2002_2024, n = 20)
-  # # A tibble: 20 × 12
-  # year lsoa_2021_code lsoa_2021_name   lad_code lad_name total f_25_49 f_50_74
-  # <int> <chr>          <chr>            <chr>    <chr>    <dbl>   <dbl>   <dbl>
-  #   1  2002 E01000001      City of London … E090000… City of…  1571     329     265
-  # 2  2003 E01000001      City of London … E090000… City of…  1578     343     257
-  # 3  2004 E01000001      City of London … E090000… City of…  1559     344     244
-  # 4  2005 E01000001      City of London … E090000… City of…  1461     297     257
-  # 5  2006 E01000001      City of London … E090000… City of…  1474     318     246
-  # 6  2007 E01000001      City of London … E090000… City of…  1538     340     250
-  # 7  2008 E01000001      City of London … E090000… City of…  1504     322     244
-  # 8  2009 E01000001      City of London … E090000… City of…  1515     314     247
-  # 9  2010 E01000001      City of London … E090000… City of…  1450     309     236
-  # 10  2011 E01000001      City of London … E090000… City of…  1472     279     241
-  # 11  2011 E01000001      City of London … E090000… City of…  1472     279     241
-  # 12  2012 E01000001      City of London … E090000… City of…  1498     285     236
-  # 13  2013 E01000001      City of London … E090000… City of…  1624     297     248
-  # 14  2014 E01000001      City of London … E090000… City of…  1592     316     248
-  # 15  2015 E01000001      City of London … E090000… City of…  1642     370     251
-  # 16  2016 E01000001      City of London … E090000… City of…  1613     349     254
-  # 17  2017 E01000001      City of London … E090000… City of…  1554     322     243
-  # 18  2018 E01000001      City of London … E090000… City of…  1589     288     239
-  # 19  2019 E01000001      City of London … E090000… City of…  1677     322     242
-  # 20  2020 E01000001      City of London … E090000… City of…  1563     316     236
+# Every LSOA-year must occur once. A duplicate generally means overlapping
+# workbook releases or a year that was included in both source streams.
+duplicate_lsoa_years <- population_2002_2024 |>
+  count(lsoa_2021_code, year, name = "n") |>
+  filter(n > 1L)
 
-
-# sth else ----------------------------------------------------------------
-
-if (FALSE) {
-  pop <- tibble(path = files, file = basename(files)) %>%
-    mutate(
-      file_lower = tolower(file),
-      year = str_extract(file_lower, "20\\d{2}") |> as.integer(),
-      format_status = case_when(
-        str_detect(file_lower, "unformatted") ~ "unformatted",
-        str_detect(file_lower, "formatted") ~ "formatted",
-        TRUE ~ NA_character_
-      ),
-      data = map(path, read_excel)
-    )
+if (nrow(duplicate_lsoa_years) > 0L) {
+  print(duplicate_lsoa_years, n = 20L)
+  stop("Duplicate LSOA-year records found; review the selected source worksheets.", call. = FALSE)
 }
+
+missing_years <- setdiff(2002:2024, sort(unique(population_2002_2024$year)))
+if (length(missing_years) > 0L) {
+  warning("No records were produced for year(s): ", paste(missing_years, collapse = ", "))
+}
+
+readr::write_csv(population_2002_2024, output_file)
+message("Wrote ", format(nrow(population_2002_2024), big.mark = ","), " rows to: ", output_file)

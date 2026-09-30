@@ -1,267 +1,251 @@
-# https://suzaku.eorc.jaxa.jp/GLI/data/final/landpar/index.html
-# https://kuroshio.eorc.jaxa.jp/JASMES/docs/PAR_Thai.html 
-# Translate the Fortran77 direct-access unformatted read into R
-# - Record 1: header stored as ASCII inside a fixed-length record
-# - Records 2..(ml+1): each record is one row of nl int16 values (2 bytes each)
+# JAXA GLI / MODIS / SeaWiFS SWR and PAR binary-grid reader ------------------
 #
-# IMPORTANT:
-# 1) This assumes "true direct access": no Fortran sequential record markers.
-# 2) Endianness matters. Try endian="little" first; if values look wrong, use "big".
-# 3) The Fortran uses rec=1+m, i.e. it SKIPS record 1 (header) and starts data at record 2.
+# Purpose:
+#   Read JAXA EORC Level-3 direct-access, unformatted binary files, convert
+#   digital numbers to physical units, build a longitude/latitude SpatRaster,
+#   and optionally export a GeoTIFF and PNG map for every file.
+#
+# Data and format documentation:
+#   https://suzaku.eorc.jaxa.jp/GLI/data/final/landpar/index.html
+#   https://kuroshio.eorc.jaxa.jp/JASMES/docs/PAR_Thai.html
+#
+# Assumptions for MOD02SSH / MYD02SSH SWR files named `*_7200_3601_swr__le`:
+#   * 2,880-byte ASCII header;
+#   * 7,200 longitude pixels by 3,601 latitude lines;
+#   * signed, 16-bit integer values; and
+#   * direct-access binary layout, with NO Fortran sequential record markers.
+#
+# The native grid has centres beginning at 0 degrees E and 90 degrees N,
+# at 0.05-degree resolution. It is converted from 0–360 degrees longitude to
+# -180–180 degrees longitude with terra::rotate().
+#
+# Important:
+#   Confirm the dimensions, header size, byte order, scale factor, and missing
+#   value convention against the readme supplied with the particular product.
+#   If values are implausible, first try `endian = "big"`.
 
-read_product <- function(path,
-                         nl, ml,
-                         header_chars = 1000,
-                         header_record_bytes = nl * 2,  # header record is same length as a data record in your note
-                         data_scale = 0.01, data_offset = 0.0,
-                         endian = c("little", "big"),
-                         skip_first_record = TRUE) {
+# Packages -----------------------------------------------------------------
+library(terra)
+library(here)
+
+# Configuration ------------------------------------------------------------
+# `here::here()` makes all paths relative to the root of the R project.
+input_dir <- here::here("data", "jaxa_swr")
+output_dir <- here::here("outputs", "swr")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# MODIS / SeaWiFS SWR product settings. Change these for another product.
+grid_ncol <- 7200L
+grid_nrow <- 3601L
+header_bytes <- 2880L
+cell_size <- 0.05
+scale_factor <- 0.01
+add_offset <- 0
+byte_order <- "little"
+missing_raw_values <- integer(0)  # e.g., c(-9999) if documented for a product
+
+# Fixed-width header parser -------------------------------------------------
+# The documented Fortran layout is:
+# (2I6, 2F8.2, F8.4, 2E12.5, A1, A8, A1, A40)
+parse_jaxa_header <- function(header_text) {
+  position <- 1L
+  
+  take_field <- function(width) {
+    field <- substr(header_text, position, position + width - 1L)
+    position <<- position + width
+    trimws(field)
+  }
+  
+  as_number <- function(x) {
+    # Supports Fortran-style D exponents as well as E exponents.
+    as.numeric(gsub("[dD]", "E", x))
+  }
+  
+  list(
+    npixel = as.integer(take_field(6L)),
+    nline = as.integer(take_field(6L)),
+    lon_min = as_number(take_field(8L)),
+    lat_max = as_number(take_field(8L)),
+    resolution = as_number(take_field(8L)),
+    slope = as_number(take_field(12L)),
+    offset = as_number(take_field(12L)),
+    separator_1 = take_field(1L),
+    parameter = take_field(8L),
+    separator_2 = take_field(1L),
+    output_name = take_field(40L)
+  )
+}
+
+# Binary reader -------------------------------------------------------------
+# Reads all image values after the fixed-length header. `raw` is returned as a
+# matrix with rows from north to south and columns from west to east.
+read_jaxa_product <- function(path,
+                              ncol = grid_ncol,
+                              nrow = grid_nrow,
+                              header_nbytes = header_bytes,
+                              scale = scale_factor,
+                              offset = add_offset,
+                              endian = c("little", "big"),
+                              missing_values = integer(0)) {
   endian <- match.arg(endian)
   
-  # Helper to parse the fixed-width header using the Fortran format:
-  # (2i6,2f8.2,f8.4,2e12.5,a1,a8,a1,a40)
-  parse_header <- function(head_str) {
-    # Ensure we have enough characters for all fields; pad with spaces
-    head_str <- sprintf("%-s", head_str)
-    
-    pos <- 1
-    cut_field <- function(width) {
-      s <- substr(head_str, pos, pos + width - 1)
-      pos <<- pos + width
-      s
-    }
-    
-    npixel  <- as.integer(trimws(cut_field(6)))
-    nline   <- as.integer(trimws(cut_field(6)))
-    lon_min <- as.numeric(trimws(cut_field(8)))
-    lat_max <- as.numeric(trimws(cut_field(8)))
-    reso    <- as.numeric(trimws(cut_field(8)))
-    slope   <- as.numeric(trimws(cut_field(12)))
-    offset  <- as.numeric(trimws(cut_field(12)))
-    comma1  <- cut_field(1)          # a1, usually ","
-    para    <- trimws(cut_field(8))  # a8
-    comma2  <- cut_field(1)          # a1, usually ","
-    outfile <- trimws(cut_field(40)) # a40
-    
-    list(npixel=npixel, nline=nline, lon_min=lon_min, lat_max=lat_max,
-         reso=reso, slope=slope, offset=offset,
-         comma1=comma1, para=para, comma2=comma2, outfile=outfile)
+  if (!file.exists(path)) {
+    stop("Input file was not found: ", path, call. = FALSE)
   }
   
-  con <- file(path, open = "rb")
-  on.exit(close(con), add = TRUE)
-  
-  # ---- Read header: record 1 ----
-  # Seek to start of record 1 (0 bytes from start)
-  seek(con, where = 0, origin = "start")
-  
-  # Read the whole fixed-length record, then take the first `header_chars` as the header text.
-  # (If your header is shorter/longer, adjust header_chars.)
-  head_raw <- readBin(con, what = "raw", n = header_record_bytes)
-  head_txt <- rawToChar(head_raw[seq_len(min(length(head_raw), header_chars))])
-  
-  hdr <- parse_header(head_txt)
-  
-  # ---- Read data records: records 2..(ml+1) in Fortran, i.e. rec=1+m ----
-  recl_bytes <- nl * 2
-  start_rec <- if (skip_first_record) 2L else 1L
-  
-  # Allocate: Fortran i2buf(nl,ml). In R we’ll store as matrix [nl x ml]
-  i2buf <- matrix(NA_integer_, nrow = nl, ncol = ml)
-  
-  for (m in seq_len(ml)) {
-    rec <- start_rec + (m - 1L)              # Fortran record number
-    offset_bytes <- (rec - 1L) * recl_bytes  # 0-based byte offset
-    
-    seek(con, where = offset_bytes, origin = "start")
-    
-    # signed=TRUE gives int16, size=2 reads 2-byte integers
-    row <- readBin(con, what = "integer", n = nl, size = 2, signed = TRUE, endian = endian)
-    if (length(row) != nl) stop(sprintf("Unexpected EOF at m=%d (record %d)", m, rec))
-    
-    i2buf[, m] <- row
+  bytes_per_value <- 2L
+  expected_bytes <- header_nbytes + ncol * nrow * bytes_per_value
+  actual_bytes <- file.info(path)$size
+  if (actual_bytes < expected_bytes) {
+    stop(
+      sprintf(
+        "File is too small (%s bytes). Expected at least %s bytes for a %d x %d grid plus header.",
+        format(actual_bytes, big.mark = ","),
+        format(expected_bytes, big.mark = ","),
+        ncol,
+        nrow
+      ),
+      call. = FALSE
+    )
+  }
+  if (actual_bytes > expected_bytes) {
+    warning(
+      "File is larger than expected; check `header_nbytes`, grid dimensions, and format assumptions.",
+      call. = FALSE
+    )
   }
   
-  # Convert to physical units (matches your Fortran examples)
-  # par = raw * 0.01 + 0.0
-  par <- i2buf * data_scale + data_offset
+  connection <- file(path, open = "rb")
+  on.exit(close(connection), add = TRUE)
   
-  # Return everything
-  list(header = hdr, raw = i2buf, par = par)
+  # Read the full first record as text. `multiple = TRUE` prevents embedded
+  # null bytes from truncating conversion if a header has trailing padding.
+  header_raw <- readBin(connection, what = "raw", n = header_nbytes)
+  header_text <- rawToChar(header_raw, multiple = FALSE)
+  header <- parse_jaxa_header(header_text)
+  
+  # The remaining bytes are signed 16-bit DNs. R fills matrices down columns,
+  # whereas the file is organised as consecutive image rows. Read a vector,
+  # make a [longitude x latitude] matrix, then transpose it to [latitude x
+  # longitude], preserving north-to-south file order.
+  raw_vector <- readBin(
+    connection,
+    what = "integer",
+    n = ncol * nrow,
+    size = bytes_per_value,
+    signed = TRUE,
+    endian = endian
+  )
+  
+  if (length(raw_vector) != ncol * nrow) {
+    stop("Unexpected end of file while reading raster values.", call. = FALSE)
+  }
+  
+  raw_matrix <- t(matrix(raw_vector, nrow = ncol, ncol = nrow))
+  if (length(missing_values) > 0L) {
+    raw_matrix[raw_matrix %in% missing_values] <- NA_integer_
+  }
+  
+  list(
+    header = header,
+    raw = raw_matrix,
+    values = raw_matrix * scale + offset
+  )
 }
 
-
-# ---------------- Example usage ----------------
-
-
-
-# MYD: Aqua MODIS, MOD: Terra MODIS
-# - Data size:
-# MODIS: 2880byte header + 2byte x 1440(pixel) x 721(line)
-# - Grid:
-# MODIS: upper-left grid location (grid center): 90N, 0E;  grid interbal: 0.25 deg
-# MODIS / SeaWiFS:
-# swr__le : daily mean shortwave radiation [W/m^2] = DN * 0.10000E-01
-# nl <- 1440; ml <- 721
-
-# path <- "./data/jaxa_swr/2000/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le/MOD02SSH_A20000224Av6_v601_7200_3601_swr__le"
-# path <- "./data/jaxa_swr/2000/MOD02SSH_A20000301Avm_v601_7200_3601_swr__le/MOD02SSH_A20000301Avm_v601_7200_3601_swr__le"
-# path <- "./data/jaxa_swr/2003/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le/MOD02SSH_A20030101Avh_v811_7200_3601_swr__le"
-
-# for some reason, readme say this
-# nl <- 3601; ml <- 7200
-# Choose grid:
-# SWR:
-# but actually this looks more plausible
-ml <- 3601
-nl <- 7200
-
-# PAR example (scale 0.01):
-# or swr=i2buf(n,m)*0.01+0.0 (MODIS and SeaWiFS)
-out <- read_product(path, nl, ml, data_scale = 0.01, data_offset = 0.0, endian = "little")
-
-
-# png("filename.png")
-# plot(out$par)
-# dev.off()
-
-# If you want SWR instead:
-# GLI uses 0.02; MODIS/SeaWiFS uses 0.01
-
-# modis_param <- 0.02
-# swr_gli <- out$raw * modis_param + 0.0
-
-# Printing every pixel is enormous; here’s how to inspect a few:
-cat("Header para:", out$header$para, "\n")
-cat("SWR (GLI) sample [n=1..5, m=1]:\n")
-print(out$par[1:5, 1])
-
-swr <- t(out$par)
-r <- rast(swr)
-# if it’s lon/lat global grid, you likely also want:
-# ext(r) <- c(-180, 180, -90, 90)
-# crs(r) <- "EPSG:4326"
-
-# plot(r)
-
-
-# plot in a loop ----------------------------------------------------------
-paths <- list.files("./data/jaxa_swr", recursive = TRUE, full.names = TRUE)
-
-# keep only the “data file” part (your files have no extension, same name as folder)
-# adapt the pattern if needed:
-
-# TODO if you wanna read in a loop
-paths <- paths[grepl("MOD02SSH_.*_7200_3601_swr__le$", paths)]
-out <- lapply(paths, read_product, ml = 3601, nl = 7200)
-
-countries <- geodata::world(resolution = 5, path = "maps")
-
-# paths: vector of file paths
-# read_one: your function that reads a file and returns (at least) the PAR grid/matrix
-# Example expectation: out$par is a matrix [nrow x ncol] i.e. [3601 x 7200]
-# If instead you have a SpatRaster already, adjust accordingly.
-
-out_dir <- "outputs/swr/"
-dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-
-res <- 0.05
-lon_ul <- 0
-lat_ul <- 90
-
-xmin <- lon_ul - res/2
-ymax <- lat_ul + res/2
-xmax <- xmin + ncol(r) * res
-ymin <- ymax - nrow(r) * res
-
-for (p in paths) {
+# Raster constructor --------------------------------------------------------
+# The coordinates supplied are the centre coordinates of the upper-left cell.
+make_jaxa_raster <- function(value_matrix,
+                             resolution = cell_size,
+                             upper_left_lon = 0,
+                             upper_left_lat = 90) {
+  raster <- terra::rast(value_matrix)
   
-  out <- read_product(
-    p,
-    nl = 7200,
-    ml = 3601,
-    data_scale = 0.01,
-    data_offset = 0.0,
-    endian = "little"
-  )  # adjust args
-  par_mat <- t(out$par)                                           # numeric matrix [3601 x 7200]
+  xmin <- upper_left_lon - resolution / 2
+  ymax <- upper_left_lat + resolution / 2
+  xmax <- xmin + terra::ncol(raster) * resolution
+  ymin <- ymax - terra::nrow(raster) * resolution
   
-  # Make SpatRaster from matrix
-  r <- rast(par_mat)
-  # By default, rast(matrix) assumes row 1 is the top; that matches lat 90 -> -90.
+  terra::ext(raster) <- terra::ext(xmin, xmax, ymin, ymax)
+  terra::crs(raster) <- "EPSG:4326"
   
-  ext(r) <- ext(xmin, xmax, ymin, ymax)
-  crs(r) <- "EPSG:4326"
-  
-  # Rotate 0..360 to -180..180 for nicer world overlay
-  r_180 <- rotate(r)
-  
-  # Output filename
-  fname <- tools::file_path_sans_ext(basename(p))
-  png_file <- file.path(out_dir, paste0(fname, "_PAR.png"))
-  
-  png(png_file, width = 2200, height = 1200, res = 200)
-  plot(r_180, col = hcl.colors(256, "viridis"), axes = TRUE,
-       main = paste("PAR:", fname))
-  plot(countries, add = TRUE, col = NA, border = "black", lwd = 1)
-  dev.off()
+  # Convert native 0–360 longitude to conventional -180–180 longitude.
+  terra::rotate(raster)
 }
 
+# Locate source files -------------------------------------------------------
+# Each JAXA data file has no extension and ends with the product identifier.
+# Amend the pattern if your downloaded file names differ.
+product_files <- list.files(
+  input_dir,
+  pattern = "MOD02SSH_.*_7200_3601_swr__le$",
+  full.names = TRUE,
+  recursive = TRUE
+)
 
-# lets cont ----------------------------------------------------------------
-res <- 0.05
-lon_ul <- 0
-lat_ul <- 90
+if (length(product_files) == 0L) {
+  stop("No MOD02SSH SWR files found below: ", input_dir, call. = FALSE)
+}
 
-# import a world countries map:
-countries <- geodata::world(resolution = 5, path = "maps") 
+# Process every daily file --------------------------------------------------
+# Set `write_png` to FALSE when only GeoTIFF output is needed.
+write_png <- TRUE
 
-out_dir <- "plots"
-dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+for (product_file in product_files) {
+  message("Reading: ", basename(product_file))
+  
+  product <- read_jaxa_product(
+    path = product_file,
+    ncol = grid_ncol,
+    nrow = grid_nrow,
+    header_nbytes = header_bytes,
+    scale = scale_factor,
+    offset = add_offset,
+    endian = byte_order,
+    missing_values = missing_raw_values
+  )
+  
+  swr_raster <- make_jaxa_raster(product$values)
+  file_stub <- basename(product_file)
+  
+  # GeoTIFF retains the numeric SWR values, coordinate system, and extent.
+  geotiff_file <- file.path(output_dir, paste0(file_stub, "_swr.tif"))
+  terra::writeRaster(swr_raster, geotiff_file, overwrite = TRUE)
+  
+  if (write_png) {
+    png_file <- file.path(output_dir, paste0(file_stub, "_swr.png"))
+    grDevices::png(png_file, width = 2200, height = 1200, res = 200)
+    plot(
+      swr_raster,
+      col = hcl.colors(256, "viridis"),
+      axes = TRUE,
+      main = paste("Daily SWR:", file_stub)
+    )
+    grDevices::dev.off()
+  }
+  
+  message(
+    "  Header parameter: ", product$header$parameter,
+    "; output: ", basename(geotiff_file)
+  )
+}
 
-xmin <- lon_ul - res/2
-ymax <- lat_ul + res/2
-xmax <- xmin + ncol(r) * res
-ymin <- ymax - nrow(r) * res
+# Optional: inspect one output ---------------------------------------------
+# example <- read_jaxa_product(product_files[[1L]])
+# print(example$header)
+# print(example$values[1:5, 1:5])
+# plot(make_jaxa_raster(example$values))
 
-ext(r) <- ext(xmin, xmax, ymin, ymax)
-crs(r) <- "EPSG:4326"
-r_180 <- rotate(r)
-
-# plot(r_180)
-
-plot(r_180, col = hcl.colors(256, "viridis"), axes = TRUE)
-plot(countries, add = TRUE, col = NA, border = "black", lwd = 2)
-
-# im not sure now 
-ggplot() + geom_spatraster(data = r) +
-  geom_sf(data = countries, fill = NA, color = "black", size = 0.1) +
-  scale_fill_viridis_c(option = "C")
-
-
-# here comes the problem --------------------------------------------------
-
-gb <- {st_read("./data/Countries_December_2021_UK_BUC_2022_6943641446890634176/CTRY_DEC_2021_UK_BUC.shp")} 
-
-gb_4326 <- gb %>% st_transform(crs = st_crs(r_180))
-
-ggplot() + geom_spatraster(data = r) +
-  geom_sf(data = gb_4326, fill = NA, color = "black", size = 0.1) +
-  scale_fill_viridis_c(option = "C")
-
-# add world ---------------------------------------------------------------
-
-world <- st_read("./data/World_Countries_(Generalized)_-573431906301700955/World_Countries_Generalized.shp") %>% st_transform(crs = st_crs(r))
-
-# Fill values; terra stores from top row to bottom row, which matches lat=90..-90
-values(r) <- as.vector(swr)   # note: t() to go row-by-row into the raster
-ggplot() + geom_spatraster(data = r) +
-  # geom_sf(data = world, fill = NA, color = "black", size = 0.1) +
-  scale_fill_viridis_c(option = "C")
-ggsave("./outputs/swr_modis.pdf")
-ggsave("./outputs/swr_modis.png")
-
-png("filename.png")
-plot(r, col = hcl.colors(100, "YlOrRd"), main = "Daily SWR (MODIS)")
-dev.off()
- 
+# Notes --------------------------------------------------------------------
+# * For GLI SWR, use the product-specific scale (often 0.02) rather than 0.01.
+# * For PAR, use its documented scale and units rather than assuming SWR units.
+# * Add country outlines only after transforming vectors to EPSG:4326:
+#
+#   library(sf)
+#   countries <- geodata::world(resolution = 5, path = here::here("maps"))
+#   countries <- st_transform(countries, "EPSG:4326")
+#   plot(swr_raster)
+#   plot(vect(countries), add = TRUE, col = NA, border = "black")
+#
+# * Do not use `here(data_dir, ...)` when `data_dir` is already an absolute
+#   path generated by `here::here()`. Use `file.path(data_dir, ...)` instead.

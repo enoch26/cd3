@@ -1,5 +1,7 @@
 # =========================================================
 # Robust ozone extraction to LSOA polygons, parallel by year
+# Data source:
+#   https://uk-air.defra.gov.uk/data/pcm-data
 # - safer for HPC / sf / terra
 # - uses multisession, not multicore
 # - writes one GPKG per completed year
