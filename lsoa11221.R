@@ -56,6 +56,7 @@ poly_lsoa_21 <- lsoa_shp[["LSOA_2021_EW_BFE_V10.shp"]] %>%
   filter(startsWith(LSOA21CD, "E")) %>%
   st_transform(27700)
 
+# https://www.data.gov.uk/dataset/4048a518-3eaf-457a-905c-9e04f4fffca8/lower-layer-super-output-area-2001-to-lower-layer-super-output-area-2011-to-local-authority-district-2011-lookup-in-england-and-wales
 lookup_01_11 <- lsoa_csv[["Lower_Layer_Super_Output_Area_(2001)_to_Lower_Layer_Super_Output_Area_(2011)_to_Local_Authority_District_(2011)_Lookup_in_England_and_Wales.csv"]] %>%
   .[grepl("^E", LSOA01CD)]
 

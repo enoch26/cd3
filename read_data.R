@@ -2,6 +2,9 @@
 # https://bristol.libguides.com/maps/map-data
 # https://osdatahub.os.uk/data/downloads/open
 
+# zeroinflated discussion
+# https://groups.google.com/g/r-inla-discussion-group/c/0nJ8fm1n2WM
+
 libs_name <- c("fingertipsR",
   "INLA", "inlabru", "sf", "terra", "here", "tidyterra", "ggplot2",
   "readxl", "viridis", "scales", "dplyr", "future", "patchwork", "readr", "stringr"

@@ -6,6 +6,11 @@ profs <- profiles()
 profs <- profs[grepl("Smok", profs$ProfileName), ]
 head(profs)
 
+lookup <- read.csv("data/LSOA_(2011)_to_LSOA_(2021)_to_Local_Authority_District_(2022)_Exact_Fit_Lookup_for_EW_(V3).csv")
+head(lookup)
+
+lookup_eng <- lookup %>%
+  filter(substr(LAD22CD, 1, 1) == "E")
 # browseVignettes("fingertipsR")
 if (FALSE) {
   a <- read.csv("./data/localhtealthtool/indicators.metadata.csv")
@@ -82,7 +87,8 @@ print(inds[grepl("never", inds$IndicatorName), c("IndicatorID", "IndicatorName")
 # <int> <fct>
 # 1       92538 Smoking Prevalence in adults (aged 18 and over) - never smoked (APS)
 # 2       92308 Smoking prevalence in adults (aged 18 and over) - never smoked (GPPS…
-
+# 20260803
+# 92443: Smoking Prevalence in adults (aged 18 and over) - current smokers (APS)
 
 # obesity -----------------------------------------------------------------
 profs_obes <- profs[grepl("Obes", profs$ProfileName), ]
@@ -117,6 +123,230 @@ data <- fingertips_data(
 
 write.csv(data, "fingertipsR.csv", row.names = FALSE)
 
+
+
+# matching for smoking -----------------------------------------------------
+data <- fingertips_data(
+  IndicatorID = c(
+    92443, 91547, 94244
+  ),
+  AreaTypeID = "All"
+)
+
+# First 6 rows for each indicator
+data %>%
+  group_by(IndicatorID) %>%
+  slice_head(n = 6) %>%
+  arrange(IndicatorID)
+
+# spatial resolution
+data %>%
+  group_by(IndicatorID, AreaType) %>%
+  summarise(
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(IndicatorID, desc(n))
+
+# time
+data %>%
+  group_by(IndicatorID, IndicatorName) %>%
+  summarise(
+    first_period = min(Timeperiod),
+    last_period = max(Timeperiod),
+    n_periods = n_distinct(Timeperiod),
+    .groups = "drop"
+  )
+
+library(dplyr)
+library(tidyr)
+
+# ============================================================
+# 0. Read lookup and keep England-only 2021 LSOAs
+# ============================================================
+
+lookup_eng <- lookup %>%
+  filter(substr(LAD22CD, 1, 1) == "E") %>%
+  select(LSOA21CD, LAD22CD) %>%
+  distinct()
+
+# ============================================================
+# 1. APS smoking prevalence (Indicator 92443)
+# ============================================================
+
+smoke_all <- data %>%
+  filter(
+    IndicatorID == 92443,
+    Sex == "Persons",
+    Age == "18+ yrs",
+    grepl("Districts", AreaType)
+  ) %>%
+  select(
+    Timeperiod,
+    LAD22CD = AreaCode,
+    smoking_prev = Value
+  ) %>%
+  distinct()
+
+# ============================================================
+# 2. Create replacement values for North Northamptonshire
+# ============================================================
+
+north_fill <- data %>%
+  filter(
+    IndicatorID == 92443,
+    Sex == "Persons",
+    Age == "18+ yrs",
+    grepl("Districts", AreaType),
+    AreaCode %in% c(
+      "E07000150", # Corby
+      "E07000152", # East Northamptonshire
+      "E07000153", # Kettering
+      "E07000156"  # Wellingborough
+    )
+  ) %>%
+  group_by(Timeperiod) %>%
+  summarise(
+    north_value = mean(Value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# ============================================================
+# 3. Create replacement values for West Northamptonshire
+# ============================================================
+
+west_fill <- data %>%
+  filter(
+    IndicatorID == 92443,
+    Sex == "Persons",
+    Age == "18+ yrs",
+    grepl("Districts", AreaType),
+    AreaCode %in% c(
+      "E07000151", # Daventry
+      "E07000154", # Northampton
+      "E07000155"  # South Northamptonshire
+    )
+  ) %>%
+  group_by(Timeperiod) %>%
+  summarise(
+    west_value = mean(Value, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# ============================================================
+# 4. Fill North/West Northamptonshire missing values
+# ============================================================
+
+smoke_all <- smoke_all %>%
+  left_join(north_fill, by = "Timeperiod") %>%
+  left_join(west_fill, by = "Timeperiod") %>%
+  mutate(
+    smoking_prev = case_when(
+      LAD22CD == "E06000061" & is.na(smoking_prev) ~ north_value,
+      LAD22CD == "E06000062" & is.na(smoking_prev) ~ west_value,
+      TRUE ~ smoking_prev
+    )
+  ) %>%
+  select(Timeperiod, LAD22CD, smoking_prev)
+
+# ============================================================
+# 5. Fill City of London & Isles of Scilly
+# ============================================================
+
+eng_mean <- smoke_all %>%
+  group_by(Timeperiod) %>%
+  summarise(
+    eng_mean = mean(smoking_prev, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+smoke_all <- smoke_all %>%
+  left_join(eng_mean, by = "Timeperiod") %>%
+  mutate(
+    smoking_prev = case_when(
+      LAD22CD %in% c("E09000001", "E06000053") &
+        is.na(smoking_prev) ~ eng_mean,
+      TRUE ~ smoking_prev
+    )
+  ) %>%
+  select(Timeperiod, LAD22CD, smoking_prev)
+
+# ============================================================
+# 6. Fill remaining APS suppressed values within LAD
+# ============================================================
+
+smoke_all <- smoke_all %>%
+  arrange(LAD22CD, Timeperiod) %>%
+  group_by(LAD22CD) %>%
+  fill(smoking_prev, .direction = "downup") %>%
+  ungroup()
+
+# ============================================================
+# 7. Create LSOA-level LONG dataset
+# ============================================================
+
+lsoa_smoke_long <- lookup_eng %>%
+  left_join(smoke_all, by = "LAD22CD") %>%
+  arrange(LSOA21CD, Timeperiod)
+
+# ============================================================
+# 8. Create LAD-level WIDE dataset
+# ============================================================
+
+smoke_wide <- smoke_all %>%
+  filter(!grepl("-", Timeperiod)) %>%  # keep annual estimates only
+  mutate(
+    Timeperiod = paste0("smoke", Timeperiod)
+  ) %>%
+  pivot_wider(
+    id_cols = LAD22CD,
+    names_from = Timeperiod,
+    values_from = smoking_prev
+  )
+
+# ============================================================
+# 9. Create LSOA-level WIDE dataset
+# ============================================================
+
+lsoa_smoke_wide <- lookup_eng %>%
+  left_join(smoke_wide, by = "LAD22CD") %>%
+  arrange(LSOA21CD)
+
+# ============================================================
+# 10. Checks
+# ============================================================
+
+cat("LSOA count (long):",
+    n_distinct(lsoa_smoke_long$LSOA21CD), "\n")
+
+cat("LSOA count (wide):",
+    n_distinct(lsoa_smoke_wide$LSOA21CD), "\n")
+
+cat("Missing values (long):",
+    sum(is.na(lsoa_smoke_long$smoking_prev)), "\n")
+
+cat("Missing values (wide smoke2021):",
+    sum(is.na(lsoa_smoke_wide$smoke2021)), "\n")
+
+# Expected:
+# LSOA count ≈ 33755
+# Missing values = 0
+
+# ============================================================
+# 11. Export
+# ============================================================
+
+write.csv(
+  lsoa_smoke_long,
+  "lsoa2021_smoking_APS_long.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  lsoa_smoke_wide,
+  "lsoa2021_smoking_APS_wide.csv",
+  row.names = FALSE
+)
 
 # example -----------------------------------------------------------------
 
