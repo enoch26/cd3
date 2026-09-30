@@ -1,354 +1,264 @@
-# =========================================================
-# Robust ozone extraction to LSOA polygons, parallel by year
+# Parallel annual ozone extraction to 2021 English LSOAs ----------------------
+#
+# Purpose:
+#   Read annual DEFRA PCM ozone CSV grids, calculate LSOA-level mean exposure,
+#   and write a GeoPackage, PNG map and RDS checkpoint for each completed year.
+#
 # Data source:
 #   https://uk-air.defra.gov.uk/data/pcm-data
-# - safer for HPC / sf / terra
-# - uses multisession, not multicore
-# - writes one GPKG per completed year
-# - writes one PNG per completed year
-# - tryCatch prevents one failed year killing all
-# =========================================================
+#
+# Expected project layout:
+#   <project root>/
+#   ├── build_lsoa_ozone_exposure_parallel.R
+#   ├── lsoa11221.R                         # creates `poly_lsoa_21`
+#   └── data/
+#       └── defra/
+#           └── ozone/
+#               ├── mapdaysgt12003_2.csv
+#               ├── mapdgt12004.csv
+#               └── ...
+#
+# Method:
+#   * Each annual grid is converted from x/y/value rows to a 1 km SpatRaster
+#     in British National Grid (EPSG:27700).
+#   * The primary estimate is an exact, cell-coverage-weighted polygon mean.
+#   * Where no raster cells overlap an LSOA, a regular polygon mean is tried,
+#     followed by the value at the LSOA centroid.
+#   * Years are processed in separate multisession workers. File writing occurs
+#     in the main R session after each worker completes, avoiding concurrent
+#     writes to GeoPackages or graphics devices.
+#
+# Important:
+#   The exact extraction requires the `exactextractr` package through terra.
+#   Review any remaining missing values in `ozone_extraction_summary.csv` before
+#   analysis. Centroid fallback values are not area-weighted estimates.
 
-# -----------------------------
-# packages
-# -----------------------------
-library(sf)
-library(terra)
-library(here)
-library(parallelly)
-library(future)
-library(ggplot2)
-source("lsoa11221.R")
-# -----------------------------
-# parallel setup
-# -----------------------------
+# Packages ------------------------------------------------------------------
+required_packages <- c("sf", "terra", "here", "future", "parallelly", "ggplot2", "readr")
+missing_packages <- required_packages[!vapply(
+  required_packages, requireNamespace, logical(1), quietly = TRUE
+)]
+if (length(missing_packages) > 0L) install.packages(missing_packages)
+invisible(lapply(required_packages, library, character.only = TRUE))
+
+# Parallel configuration ----------------------------------------------------
+# `multisession` uses independent R sessions and is generally safer than
+# multicore processing for sf/GEOS/GDAL/terra workflows and on HPC systems.
 options(
   parallelly.availableCores.methods = c(
-    "cgroups.cpuset",
-    "nproc",
-    "/proc/self/status",
-    "system"
+    "cgroups.cpuset", "nproc", "/proc/self/status", "system"
   ),
   future.globals.maxSize = 8 * 1024^3
 )
 
-# use fewer than max for stability
-n_workers <- min(4, parallelly::availableCores())
+maximum_workers <- 4L
+n_workers <- min(maximum_workers, parallelly::availableCores())
+future::plan(
+  if (n_workers > 1L) future::multisession else future::sequential,
+  workers = if (n_workers > 1L) n_workers else NULL
+)
+on.exit(future::plan(future::sequential), add = TRUE)
 message("Workers used by this R session: ", n_workers)
 
-if (n_workers > 1) {
-  future::plan(future::multisession, workers = n_workers)
-  message("Running with multisession on ", n_workers, " workers")
-} else {
-  future::plan(future::sequential)
-  message("Only 1 worker available")
-}
+# Paths and annual source files --------------------------------------------
+# `lsoa11221.R` must create `poly_lsoa_21`, an sf object of 2021 English LSOA
+# polygons with an `LSOA21CD` field.
+source(here::here("lsoa11221.R"))
 
-# -----------------------------
-# user inputs
-# -----------------------------
-data_dir <- file.path(here::here(), "data", "defra")
-out_dir  <- here::here("ozone_lsoa_yearly")
-plot_dir <- file.path(out_dir, "png")
-rds_dir  <- file.path(out_dir, "rds")
+data_dir <- here::here("data", "defra", "ozone")
+output_dir <- here::here("outputs", "ozone_lsoa_yearly")
+plot_dir <- file.path(output_dir, "png")
+rds_dir <- file.path(output_dir, "rds")
+summary_file <- file.path(output_dir, "ozone_extraction_summary.csv")
 
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
 
-files <- c(
-  "mapdaysgt12003_2.csv",
-  "mapdgt12004.csv",
-  "mapdgt120_2005r.csv",
-  "mapdgt120_06.csv",
-  "mapdgt120_07.csv",
-  "mapdgt120_08.csv",
-  "mapdgt120_09.csv",
-  "mapdgt120_10.csv",
-  "mapdgt120_11.csv",
-  "mapdgt120_12.csv",
-  "mapdgt12013.csv",
-  "mapdgt12014.csv",
-  "mapdgt12015.csv",
-  "mapdgt12016.csv",
-  "mapdgt12017.csv",
-  "mapdgt12018.csv",
-  "mapdgt12019.csv",
-  "mapdgt12020.csv",
-  "mapdgt12021.csv",
-  "mapdgt12022.csv",
-  "mapdgt12023.csv",
-  "mapdgt12024.csv"
+# The source file names are irregular, so retain an explicit year-to-file map.
+ozone_files <- data.frame(
+  year = 2003:2024,
+  file = c(
+    "mapdaysgt12003_2.csv", "mapdgt12004.csv", "mapdgt120_2005r.csv",
+    "mapdgt120_06.csv", "mapdgt120_07.csv", "mapdgt120_08.csv",
+    "mapdgt120_09.csv", "mapdgt120_10.csv", "mapdgt120_11.csv",
+    "mapdgt120_12.csv", "mapdgt12013.csv", "mapdgt12014.csv",
+    "mapdgt12015.csv", "mapdgt12016.csv", "mapdgt12017.csv",
+    "mapdgt12018.csv", "mapdgt12019.csv", "mapdgt12020.csv",
+    "mapdgt12021.csv", "mapdgt12022.csv", "mapdgt12023.csv",
+    "mapdgt12024.csv"
+  ),
+  stringsAsFactors = FALSE
 )
+ozone_files$path <- file.path(data_dir, ozone_files$file)
 
-# ---------------------------------------------------
-# assumes poly_lsoa_21 already exists in your session
-# ---------------------------------------------------
-if (!exists("poly_lsoa_21")) {
-  stop("Object `poly_lsoa_21` not found in the current environment.")
+if (!dir.exists(data_dir)) stop("Ozone input directory not found: ", data_dir, call. = FALSE)
+
+# Validate and prepare LSOA geometry ---------------------------------------
+if (!exists("poly_lsoa_21") || !inherits(poly_lsoa_21, "sf")) {
+  stop("`lsoa11221.R` must create `poly_lsoa_21` as an sf object.", call. = FALSE)
 }
-
-if (!inherits(poly_lsoa_21, "sf")) {
-  stop("`poly_lsoa_21` must be an sf object.")
+if (!"LSOA21CD" %in% names(poly_lsoa_21)) {
+  stop("`poly_lsoa_21` must contain an `LSOA21CD` column.", call. = FALSE)
 }
+if (is.na(sf::st_crs(poly_lsoa_21))) stop("`poly_lsoa_21` has no CRS.", call. = FALSE)
 
-# -----------------------------
-# checks and geometry prep
-# -----------------------------
-if (is.na(sf::st_crs(poly_lsoa_21))) {
-  stop("`poly_lsoa_21` has no CRS.")
-}
-
-if (sf::st_crs(poly_lsoa_21)$epsg != 27700) {
-  message("Transforming polygons to EPSG:27700 ...")
-  poly_lsoa_21 <- sf::st_transform(poly_lsoa_21, 27700)
-}
-
-invalid_n <- sum(!sf::st_is_valid(poly_lsoa_21))
-if (invalid_n > 0) {
-  message("Making ", invalid_n, " invalid polygon(s) valid ...")
+# DEFRA PCM grid coordinates are expected in British National Grid metres.
+poly_lsoa_21 <- sf::st_transform(poly_lsoa_21, 27700)
+invalid <- !sf::st_is_valid(poly_lsoa_21)
+if (any(invalid)) {
+  message("Repairing ", sum(invalid), " invalid LSOA polygon(s) ...")
   poly_lsoa_21 <- sf::st_make_valid(poly_lsoa_21)
 }
 
-# -----------------------------
-# helper: read one ozone file
-# -----------------------------
-read_ozone_csv_as_raster <- function(f) {
-  dat <- read.csv(
-    f,
-    skip = 5,
-    header = FALSE,
-    na.strings = "MISSING",
-    stringsAsFactors = FALSE
+# Helpers -------------------------------------------------------------------
+read_ozone_csv_as_raster <- function(path, cell_resolution_metres = 1000) {
+  # PCM CSV files have five metadata rows. The first apparent data row can be
+  # a header-like record, so parse numbers and retain valid coordinates only.
+  raw <- readr::read_csv(
+    path,
+    skip = 5L,
+    col_names = FALSE,
+    na = c("MISSING", "NA", ""),
+    show_col_types = FALSE
   )
-  
-  dat <- dat[-1, , drop = FALSE]
-  
-  if (ncol(dat) < 4) {
-    stop(sprintf("File %s: expected at least 4 columns, got %s", f, ncol(dat)))
+  if (ncol(raw) < 4L) {
+    stop("Expected at least four columns in: ", basename(path), call. = FALSE)
   }
   
-  names(dat)[1:4] <- c("gridcode", "x", "y", "value")
-  dat <- dat[, 1:4, drop = FALSE]
-  
-  dat$x <- as.numeric(dat$x)
-  dat$y <- as.numeric(dat$y)
-  dat$value <- as.numeric(dat$value)
-  
+  dat <- data.frame(
+    x = readr::parse_number(as.character(raw[[2L]])),
+    y = readr::parse_number(as.character(raw[[3L]])),
+    value = readr::parse_number(as.character(raw[[4L]]))
+  )
   dat <- dat[!is.na(dat$x) & !is.na(dat$y), , drop = FALSE]
+  if (nrow(dat) == 0L) stop("No usable x/y rows in: ", basename(path), call. = FALSE)
+  if (anyDuplicated(dat[c("x", "y")])) stop("Duplicate x/y locations in: ", basename(path), call. = FALSE)
   
-  if (nrow(dat) == 0) {
-    stop(sprintf("File %s has no usable x/y rows after cleaning.", f))
-  }
-  
-  terra::rast(dat[, c("x", "y", "value")], type = "xyz", crs = "EPSG:27700")
+  template <- terra::rast(
+    xmin = min(dat$x) - cell_resolution_metres / 2,
+    xmax = max(dat$x) + cell_resolution_metres / 2,
+    ymin = min(dat$y) - cell_resolution_metres / 2,
+    ymax = max(dat$y) + cell_resolution_metres / 2,
+    resolution = cell_resolution_metres,
+    crs = "EPSG:27700"
+  )
+  points <- terra::vect(dat, geom = c("x", "y"), crs = "EPSG:27700")
+  terra::rasterize(points, template, field = "value")
 }
 
-# -----------------------------
-# helper: save one png
-# -----------------------------
-save_ozone_plot <- function(x, value_col, year, plot_file) {
-  p <- ggplot2::ggplot(x) +
-    ggplot2::geom_sf(ggplot2::aes(fill = .data[[value_col]]), color = NA) +
-    ggplot2::scale_fill_viridis_c(
-      option = "C",
-      na.value = "grey85",
-      name = paste0("Ozone ", year)
-    ) +
-    ggplot2::labs(
-      title = paste("LSOA ozone exposure", year),
-      subtitle = value_col
-    ) +
+extract_ozone_year <- function(year, path, lsoa_sf) {
+  # All terra objects are made inside the worker rather than passed between
+  # processes. This is safer on network filesystems and HPC installations.
+  tryCatch({
+    if (!file.exists(path)) stop("Input file not found: ", path, call. = FALSE)
+    message("Reading ozone grid for ", year, ": ", basename(path))
+    
+    raster <- read_ozone_csv_as_raster(path)
+    lsoa_vect <- terra::vect(lsoa_sf)
+    
+    # `exact = TRUE` calculates coverage fractions for intersected grid cells.
+    values <- terra::extract(
+      raster, lsoa_vect, fun = mean, na.rm = TRUE, ID = FALSE, exact = TRUE
+    )[[1L]]
+    
+    # Some small/coastal polygons may not overlap a valid raster cell. First
+    # retry with terra's ordinary polygon extraction, then use centroid values.
+    missing_after_exact <- is.na(values)
+    if (any(missing_after_exact)) {
+      values[missing_after_exact] <- terra::extract(
+        raster, lsoa_vect[missing_after_exact], fun = mean, na.rm = TRUE, ID = FALSE
+      )[[1L]]
+    }
+    
+    missing_after_polygon <- is.na(values)
+    if (any(missing_after_polygon)) {
+      centroids <- sf::st_point_on_surface(lsoa_sf[missing_after_polygon, ])
+      values[missing_after_polygon] <- terra::extract(
+        raster, terra::vect(centroids), ID = FALSE
+      )[[1L]]
+    }
+    
+    list(ok = TRUE, year = year, values = values, n_na = sum(is.na(values)), error = NA_character_)
+  }, error = function(error) {
+    list(ok = FALSE, year = year, values = NULL, n_na = NA_integer_, error = conditionMessage(error))
+  })
+}
+
+save_ozone_plot <- function(lsoa_sf, value_column, year, output_file) {
+  map <- ggplot2::ggplot(lsoa_sf) +
+    ggplot2::geom_sf(ggplot2::aes(fill = .data[[value_column]]), colour = NA) +
+    ggplot2::scale_fill_viridis_c(option = "C", na.value = "grey85", name = "Ozone") +
+    ggplot2::labs(title = paste("LSOA ozone exposure", year), subtitle = value_column) +
     ggplot2::theme_void() +
     ggplot2::theme(
       plot.title = ggplot2::element_text(face = "bold"),
       legend.position = "right"
     )
-  
-  ggplot2::ggsave(
-    filename = plot_file,
-    plot = p,
-    width = 8,
-    height = 10,
-    dpi = 300
-  )
+  ggplot2::ggsave(output_file, map, width = 8, height = 10, dpi = 300)
 }
 
-# -----------------------------
-# helper: extract one year safely
-# -----------------------------
-extract_ozone_year <- function(i, files, data_dir, poly_sf) {
-  tryCatch({
-    yr <- 2002 + i
-    f <- file.path(data_dir, "ozone", files[i])
-    
-    message("Year ", yr, ": reading ", basename(f))
-    
-    if (!file.exists(f)) {
-      stop(sprintf("Year %s: file not found: %s", yr, f))
-    }
-    
-    # create terra objects inside worker
-    poly_vect <- terra::vect(poly_sf)
-    r <- read_ozone_csv_as_raster(f)
-    
-    # 1) weighted exact mean
-    vals <- terra::extract(
-      r, poly_vect,
-      fun = mean,
-      na.rm = TRUE,
-      ID = FALSE,
-      weights = TRUE,
-      exact = TRUE
-    )[[1]]
-    
-    # 2) fallback unweighted mean
-    miss1 <- is.na(vals)
-    if (any(miss1)) {
-      vals[miss1] <- terra::extract(
-        r, poly_vect[miss1],
-        fun = mean,
-        na.rm = TRUE,
-        ID = FALSE
-      )[[1]]
-    }
-    
-    # 3) fallback centroid value
-    miss2 <- is.na(vals)
-    if (any(miss2)) {
-      cent <- sf::st_centroid(poly_sf[miss2, ])
-      vals[miss2] <- terra::extract(
-        r,
-        terra::vect(cent),
-        ID = FALSE
-      )[[1]]
-    }
-    
-    list(
-      ok = TRUE,
-      year = yr,
-      values = vals,
-      n_na = sum(is.na(vals)),
-      error = NULL
-    )
-  }, error = function(e) {
-    list(
-      ok = FALSE,
-      year = 2002 + i,
-      values = NULL,
-      n_na = NA_integer_,
-      error = conditionMessage(e)
-    )
-  })
-}
-
-# -----------------------------
-# launch one future per year
-# -----------------------------
-futs <- lapply(seq_along(files), function(i) {
+# Submit a job for each available year -------------------------------------
+# Missing files return an error record rather than stopping all other years.
+jobs <- lapply(seq_len(nrow(ozone_files)), function(index) {
   future::future(
     extract_ozone_year(
-      i = i,
-      files = files,
-      data_dir = data_dir,
-      poly_sf = poly_lsoa_21
+      year = ozone_files$year[index],
+      path = ozone_files$path[index],
+      lsoa_sf = poly_lsoa_21
     ),
     seed = TRUE
   )
 })
 
-done <- rep(FALSE, length(futs))
-summary_list <- vector("list", length(futs))
+# Collect outputs as each task completes -----------------------------------
+completed <- rep(FALSE, length(jobs))
+results <- vector("list", length(jobs))
 
-# -----------------------------
-# collect results as they finish
-# -----------------------------
-while (!all(done)) {
-  for (j in seq_along(futs)) {
-    if (!done[j] && future::resolved(futs[[j]])) {
-      res <- future::value(futs[[j]])
-      done[j] <- TRUE
-      summary_list[[j]] <- res
-      
-      if (!isTRUE(res$ok)) {
-        message("Year ", res$year, " failed: ", res$error)
-        next
-      }
-      
-      yr_col <- paste0("ozone", res$year)
-      
-      out_sf <- poly_lsoa_21
-      out_sf[[yr_col]] <- res$values
-      
-      gpkg_file <- file.path(
-        out_dir,
-        paste0("ozone_lsoa_eng_", res$year, ".gpkg")
-      )
-      
-      png_file <- file.path(
-        plot_dir,
-        paste0("ozone_lsoa_eng_", res$year, ".png")
-      )
-      
-      rds_file <- file.path(
-        rds_dir,
-        paste0("ozone_lsoa_eng_", res$year, ".rds")
-      )
-      
-      message("Completed ", yr_col, "; remaining NAs = ", res$n_na)
-      
-      # write gpkg
-      message("Writing ", gpkg_file)
-      if (file.exists(gpkg_file)) {
-        file.remove(gpkg_file)
-      }
-      sf::st_write(
-        out_sf,
-        gpkg_file,
-        delete_dsn = TRUE,
-        quiet = FALSE
-      )
-      
-      # save png
-      message("Saving plot ", png_file)
-      save_ozone_plot(
-        x = out_sf,
-        value_col = yr_col,
-        year = res$year,
-        plot_file = png_file
-      )
-      
-      # save rds checkpoint
-      saveRDS(out_sf, rds_file)
-      message("Saved checkpoint ", rds_file)
-      
-      # clean up
-      rm(out_sf)
-      invisible(gc())
+while (!all(completed)) {
+  for (index in seq_along(jobs)) {
+    if (completed[index] || !future::resolved(jobs[[index]])) next
+    
+    result <- future::value(jobs[[index]])
+    completed[index] <- TRUE
+    results[[index]] <- result
+    
+    if (!isTRUE(result$ok)) {
+      message("Year ", result$year, " failed: ", result$error)
+      next
     }
+    
+    value_column <- paste0("ozone", result$year)
+    yearly_lsoa <- poly_lsoa_21
+    yearly_lsoa[[value_column]] <- result$values
+    
+    gpkg_file <- file.path(output_dir, paste0("ozone_lsoa_eng_", result$year, ".gpkg"))
+    png_file <- file.path(plot_dir, paste0("ozone_lsoa_eng_", result$year, ".png"))
+    rds_file <- file.path(rds_dir, paste0("ozone_lsoa_eng_", result$year, ".rds"))
+    
+    message("Completed ", value_column, "; remaining missing values: ", result$n_na)
+    sf::st_write(yearly_lsoa, gpkg_file, delete_dsn = TRUE, quiet = TRUE)
+    save_ozone_plot(yearly_lsoa, value_column, result$year, png_file)
+    saveRDS(yearly_lsoa, rds_file)
+    
+    rm(yearly_lsoa)
+    invisible(gc())
   }
-  
   Sys.sleep(1)
 }
 
-# -----------------------------
-# summary
-# -----------------------------
+# Completion report ---------------------------------------------------------
 summary_df <- data.frame(
-  year = vapply(summary_list, function(x) x$year, integer(1)),
-  ok   = vapply(summary_list, function(x) isTRUE(x$ok), logical(1)),
-  n_na = vapply(summary_list, function(x) {
-    if (is.null(x$n_na)) NA_integer_ else x$n_na
-  }, integer(1)),
-  error = vapply(summary_list, function(x) {
-    if (is.null(x$error)) NA_character_ else ifelse(is.null(x$error), NA_character_, x$error)
-  }, character(1))
+  year = vapply(results, `[[`, integer(1), "year"),
+  ok = vapply(results, `[[`, logical(1), "ok"),
+  n_missing = vapply(results, `[[`, integer(1), "n_na"),
+  error = vapply(results, `[[`, character(1), "error")
 )
-
 summary_df <- summary_df[order(summary_df$year), ]
+readr::write_csv(summary_df, summary_file)
 print(summary_df)
 
-message("Done.")
-message("GPKG files: ", out_dir)
-message("PNG files: ", plot_dir)
+message("Done. GeoPackages: ", output_dir)
+message("PNG maps: ", plot_dir)
 message("RDS checkpoints: ", rds_dir)
+message("Summary: ", summary_file)

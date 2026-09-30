@@ -1,8 +1,0 @@
-mkdir -p ons_files &&
-curl -Ls "https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/lowersuperoutputareamidyearpopulationestimatesnationalstatistics" \
-| grep -Eio '/file\?uri=[^"]+\.(zip|xls|xlsx)|https://[^"]+\.(zip|xls|xlsx)' \
-| sed 's#^/#https://www.ons.gov.uk/#' \
-| sort -u > urls.txt &&
-cd ons_files &&
-wget -c --wait=10 --random-wait --tries=20 --retry-on-http-error=429 --content-disposition -i ../urls.txt
-

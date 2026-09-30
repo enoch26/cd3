@@ -1,630 +1,255 @@
-# read a loop ---------------------------------------------------------------
-# Model outputs are annual means, represented in µg m-3.
-# folders
-in_dir <- file.path(here::here(), "data", "defra", pollutant)
-out_tif <- file.path(in_dir, "geotiff")
-out_png <- file.path(in_dir, "plots")
+# DEFRA PCM annual CSV grids -> aligned GeoTIFFs and diagnostic maps ----------
+#
+# Purpose:
+#   Convert annual DEFRA PCM model-output CSV files (annual mean concentrations
+#   in micrograms per cubic metre) into British National Grid GeoTIFFs. The
+#   script also crops all annual grids to their common spatial overlap so that
+#   they can be compared cell by cell.
+#
+# Source:
+#   https://uk-air.defra.gov.uk/data/pcm-data
+#
+# Expected layout for a selected pollutant:
+#   data/defra/<pollutant>/
+#     <annual PCM CSV files>
+#     geotiff/                  # created: original-extent rasters
+#     geotiff_overlap/          # created: common-overlap rasters
+#     plots/                    # created: diagnostic PNG files
+#
+# Assumptions to verify against the downloaded PCM release:
+#   * the first five CSV rows are metadata;
+#   * data begin on row six;
+#   * coordinate fields are named `x` and `y`, in EPSG:27700 metres;
+#   * the concentration field is the fourth data column; and
+#   * cells are on a 1 km grid.
 
-dir.create(out_tif, showWarnings = FALSE, recursive = TRUE)
-dir.create(out_png, showWarnings = FALSE, recursive = TRUE)
+# Packages ------------------------------------------------------------------
+required_packages <- c("terra", "dplyr", "readr", "stringr", "here")
+missing_packages <- required_packages[!vapply(
+  required_packages, requireNamespace, logical(1), quietly = TRUE
+)]
+if (length(missing_packages) > 0L) install.packages(missing_packages)
+invisible(lapply(required_packages, library, character.only = TRUE))
 
-# list all csv files
-files <- list.files(in_dir, pattern = "\\.csv$", full.names = TRUE)
+# Configuration -------------------------------------------------------------
+# Run once per pollutant, e.g. "benzene", "pm25", "pm10", or "nox".
+pollutant <- "pm25"
+input_dir <- here::here("data", "defra", pollutant)
+raw_tif_dir <- file.path(input_dir, "geotiff")
+overlap_tif_dir <- file.path(input_dir, "geotiff_overlap")
+plot_dir <- file.path(input_dir, "plots")
 
-# helper: read one file and make raster
-read_pollutant_raster <- function(f) {
-  # metadata rows
-  meta <- read_csv(f, n_max = 5, col_names = FALSE, show_col_types = FALSE)
+metadata_rows <- 5L
+metric_column_index <- 4L
+cell_resolution_metres <- 1000
+input_crs <- "EPSG:27700"
+number_of_plot_columns <- 4L
 
-  # try to get year from row 2, col 1
-  year_meta <- suppressWarnings(as.integer(meta[[1]][2]))
+if (!dir.exists(input_dir)) {
+  stop("Input directory does not exist: ", input_dir, call. = FALSE)
+}
+dir.create(raw_tif_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(overlap_tif_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # data
-  dat <- read_csv(f, skip = 5, na = "MISSING", show_col_types = FALSE)
+csv_files <- list.files(
+  input_dir, pattern = "\\.csv$", full.names = TRUE, ignore.case = TRUE
+)
+if (length(csv_files) == 0L) {
+  stop("No CSV files found in: ", input_dir, call. = FALSE)
+}
 
-  # find metric column = 4th column
-  metric_col <- names(dat)[4]
+# Helpers -------------------------------------------------------------------
+extract_year <- function(path, metadata_year = NA_integer_) {
+  if (!is.na(metadata_year)) return(metadata_year)
 
-  dat[[metric_col]] <- as.numeric(dat[[metric_col]])
+  file_year <- stringr::str_extract(basename(path), "(?:19|20)\\d{2}")
+  year <- suppressWarnings(as.integer(file_year))
+  if (is.na(year)) {
+    stop("Could not identify a year from metadata or filename: ", basename(path), call. = FALSE)
+  }
+  year
+}
 
-  # drop rows with missing coordinates
-  dat <- dat %>% filter(!is.na(x), !is.na(y))
-
-  # make template raster from centroid extent
-  r_template <- rast(
-    xmin = min(dat$x) - 500,
-    xmax = max(dat$x) + 500,
-    ymin = min(dat$y) - 500,
-    ymax = max(dat$y) + 500,
-    resolution = 1000,
-    crs = "EPSG:27700"
+# Read a PCM CSV and rasterise its 1 km centroid grid. `rast()` is created
+# from the observed centroid extent, with half a cell added on every side.
+read_pcm_raster <- function(path) {
+  metadata <- readr::read_csv(
+    path, n_max = metadata_rows, col_names = FALSE, show_col_types = FALSE
   )
+  metadata_year <- suppressWarnings(as.integer(metadata[[1L]][2L]))
 
-  # points to SpatVector
-  v <- vect(dat, geom = c("x", "y"), crs = "EPSG:27700")
-
-  # rasterize
-  r <- rasterize(v, r_template, field = metric_col)
-
-  # get year from file name if metadata failed
-  if (is.na(year_meta)) {
-    yr <- str_extract(basename(f), "(19|20)\\d{2}")
-    year_meta <- as.integer(yr)
+  data <- readr::read_csv(
+    path, skip = metadata_rows, na = c("MISSING", "NA", ""), show_col_types = FALSE
+  )
+  required_columns <- c("x", "y")
+  if (!all(required_columns %in% names(data))) {
+    stop("CSV must contain `x` and `y` columns: ", basename(path), call. = FALSE)
+  }
+  if (ncol(data) < metric_column_index) {
+    stop("CSV has fewer than ", metric_column_index, " columns: ", basename(path), call. = FALSE)
   }
 
-  names(r) <- paste0("y", year_meta)
+  metric_column <- names(data)[metric_column_index]
+  data <- data |>
+    dplyr::mutate(
+      x = readr::parse_number(as.character(x)),
+      y = readr::parse_number(as.character(y)),
+      value = readr::parse_number(as.character(.data[[metric_column]]))
+    ) |>
+    dplyr::filter(!is.na(x), !is.na(y))
 
-  list(
-    raster = r,
-    year = year_meta,
-    metric = metric_col,
-    file = f
+  if (nrow(data) == 0L) stop("No valid coordinate rows in: ", basename(path), call. = FALSE)
+  if (anyDuplicated(data[c("x", "y")])) {
+    stop("Duplicate x/y grid locations in: ", basename(path), call. = FALSE)
+  }
+
+  template <- terra::rast(
+    xmin = min(data$x) - cell_resolution_metres / 2,
+    xmax = max(data$x) + cell_resolution_metres / 2,
+    ymin = min(data$y) - cell_resolution_metres / 2,
+    ymax = max(data$y) + cell_resolution_metres / 2,
+    resolution = cell_resolution_metres,
+    crs = input_crs
+  )
+  points <- terra::vect(data, geom = c("x", "y"), crs = input_crs)
+  raster <- terra::rasterize(points, template, field = "value")
+
+  year <- extract_year(path, metadata_year)
+  names(raster) <- paste0("y", year)
+  list(raster = raster, year = year, metric = metric_column, file = path)
+}
+
+common_extent <- function(rasters) {
+  extents <- lapply(rasters, terra::ext)
+  overlap <- terra::ext(
+    max(vapply(extents, terra::xmin, numeric(1))),
+    min(vapply(extents, terra::xmax, numeric(1))),
+    max(vapply(extents, terra::ymin, numeric(1))),
+    min(vapply(extents, terra::ymax, numeric(1)))
+  )
+  if (terra::xmin(overlap) >= terra::xmax(overlap) ||
+      terra::ymin(overlap) >= terra::ymax(overlap)) {
+    stop("The annual rasters have no common spatial overlap.", call. = FALSE)
+  }
+  overlap
+}
+
+raster_range <- function(rasters) {
+  mins <- vapply(rasters, function(x) terra::global(x, "min", na.rm = TRUE)[1, 1], numeric(1))
+  maxs <- vapply(rasters, function(x) terra::global(x, "max", na.rm = TRUE)[1, 1], numeric(1))
+  c(min(mins, na.rm = TRUE), max(maxs, na.rm = TRUE))
+}
+
+# Produce a panel plot with a common concentration scale and one legend.
+plot_multipanel <- function(rasters, years, filename, title_suffix = "", log10_scale = FALSE) {
+  if (log10_scale) rasters <- lapply(rasters, function(x) terra::ifel(x > 0, log10(x), NA))
+  zlim <- raster_range(rasters)
+  colours <- hcl.colors(30, "YlOrRd")
+  n_rows <- ceiling(length(rasters) / number_of_plot_columns)
+
+  grDevices::png(filename, width = 3600, height = 600 * n_rows, res = 200)
+  on.exit(grDevices::dev.off(), add = TRUE)
+  graphics::par(mfrow = c(n_rows, number_of_plot_columns), mar = c(2, 2, 3, 1), oma = c(0, 0, 0, 16), xpd = NA)
+
+  for (i in seq_along(rasters)) {
+    terra::plot(rasters[[i]], col = colours, zlim = zlim, main = years[i],
+                axes = FALSE, box = FALSE, legend = FALSE)
+  }
+
+  graphics::par(fig = c(0.92, 0.96, 0.20, 0.80), new = TRUE, mar = c(0, 0, 0, 4))
+  graphics::plot.new()
+  graphics::plot.window(xlim = c(0, 1), ylim = zlim)
+  breaks <- seq(zlim[1], zlim[2], length.out = length(colours) + 1L)
+  for (j in seq_along(colours)) graphics::rect(0, breaks[j], 0.45, breaks[j + 1L], col = colours[j], border = NA)
+  graphics::rect(0, zlim[1], 0.45, zlim[2], border = "black")
+  ticks <- pretty(zlim, n = 5)
+  ticks <- ticks[ticks >= zlim[1] & ticks <= zlim[2]]
+  graphics::axis(4, at = ticks, labels = format(round(ticks, 2), trim = TRUE), las = 1)
+  legend_label <- if (log10_scale) {
+    paste0("log10 ", pollutant, " (micrograms per cubic metre)")
+  } else {
+    paste0(pollutant, " (micrograms per cubic metre)")
+  }
+  graphics::mtext(legend_label, side = 4, line = 2.5)
+  graphics::mtext(title_suffix, side = 3, outer = TRUE, line = -1)
+}
+
+# Read, write and align rasters --------------------------------------------
+products <- lapply(csv_files, read_pcm_raster)
+years <- vapply(products, `[[`, integer(1), "year")
+if (anyDuplicated(years)) stop("More than one input CSV was assigned to a year.", call. = FALSE)
+products <- products[order(years)]
+years <- vapply(products, `[[`, integer(1), "year")
+rasters <- lapply(products, `[[`, "raster")
+
+for (i in seq_along(products)) {
+  terra::writeRaster(
+    rasters[[i]], file.path(raw_tif_dir, sprintf("%s_%d.tif", pollutant, years[i])), overwrite = TRUE
   )
 }
 
-# read all rasters
-rasters_list <- lapply(files, read_pollutant_raster)
-
-# sort by year
-yrs <- sapply(rasters_list, `[[`, "year")
-ord <- order(yrs)
-rasters_list <- rasters_list[ord]
-
-# save each GeoTIFF
-for (obj in rasters_list) {
-  yr <- obj$year
-  r <- obj$raster
-
-  out_file <- file.path(out_tif, paste0(pollutant, "_", yr, ".tif"))
-  writeRaster(r, out_file, overwrite = TRUE)
+overlap_extent <- common_extent(rasters)
+# `snap = "in"` retains only complete cells within the overlap. This avoids
+# partial edge cells and makes the resulting rasters directly comparable.
+overlap_rasters <- lapply(rasters, terra::crop, y = overlap_extent, snap = "in")
+reference <- overlap_rasters[[1L]]
+for (i in seq_along(overlap_rasters)[-1L]) {
+  if (!terra::compareGeom(reference, overlap_rasters[[i]], stopOnError = FALSE)) {
+    stop("Rasters are not geometrically aligned after cropping; inspect grid origins.", call. = FALSE)
+  }
 }
 
-# align extents -------------------------------------------------------------
-
-years <- sapply(rasters_list, `[[`, "year")
-rasters <- lapply(rasters_list, `[[`, "raster")
-
-exts <- lapply(rasters, ext)
-
-common_ext <- ext(
-  max(sapply(exts, xmin)),
-  min(sapply(exts, xmax)),
-  max(sapply(exts, ymin)),
-  min(sapply(exts, ymax))
-)
-
-rasters_crop <- lapply(rasters, function(r) crop(r, common_ext))
-
-for (i in 2:length(rasters_crop)) {
-  print(compareGeom(rasters_crop[[1]], rasters_crop[[i]], stopOnError = FALSE))
-}
-
-out_tif_overlap <- file.path(in_dir, "geotiff_overlap")
-dir.create(out_tif_overlap, showWarnings = FALSE, recursive = TRUE)
-
-for (i in seq_along(rasters_crop)) {
-  writeRaster(
-    rasters_crop[[i]],
-    file.path(out_tif_overlap, paste0(pollutant, "_", years[i], "_overlap.tif")),
+for (i in seq_along(overlap_rasters)) {
+  terra::writeRaster(
+    overlap_rasters[[i]],
+    file.path(overlap_tif_dir, sprintf("%s_%d_overlap.tif", pollutant, years[i])),
     overwrite = TRUE
   )
 }
 
-# stack rasters
-r_stack <- rast(rasters_crop)
-
-# Multipanel plot across years -------------------------------------------------------
-# Use original rasters directly
-rasters_plot <- rasters_crop
-
-# Common min/max across all rasters
-mins <- sapply(rasters_plot, function(r) global(r, "min", na.rm = TRUE)[1, 1])
-maxs <- sapply(rasters_plot, function(r) global(r, "max", na.rm = TRUE)[1, 1])
-
-global_min <- min(mins, na.rm = TRUE)
-global_max <- max(maxs, na.rm = TRUE)
-
-# Colour palette
-cols <- hcl.colors(30, "YlOrRd")
-
-# Layout
-n <- length(rasters_plot)
-ncol_plot <- 4
-nrow_plot <- ceiling(n / ncol_plot)
-
-png(
-  file.path(out_png, paste0(pollutant, "_overlap_multipanel_commonlegend.png")),
-  width = 3600,
-  height = 600 * nrow_plot,
-  res = 200
+# Diagnostic maps ----------------------------------------------------------
+plot_multipanel(
+  overlap_rasters, years,
+  file.path(plot_dir, paste0(pollutant, "_overlap_multipanel.png")),
+  title_suffix = "Annual concentration: common scale"
+)
+plot_multipanel(
+  overlap_rasters, years,
+  file.path(plot_dir, paste0(pollutant, "_overlap_multipanel_log10.png")),
+  title_suffix = "Annual concentration: common log10 scale",
+  log10_scale = TRUE
 )
 
-# Main plotting region leaves room on right for legend
-par(
-  mfrow = c(nrow_plot, ncol_plot),
-  mar = c(2, 2, 3, 1),
-  oma = c(0, 0, 0, 16),
-  xpd = NA
-)
+# Change from the first available year. Layer one is the baseline level;
+# subsequent layers show annual absolute differences in the native units.
+raster_stack <- terra::rast(overlap_rasters)
+baseline_year <- years[1L]
+baseline <- raster_stack[[1L]]
+differences <- raster_stack - baseline
+names(differences) <- names(raster_stack)
 
-# Plot each raster without legend
-for (i in seq_along(rasters_plot)) {
-  plot(
-    rasters_plot[[i]],
-    col = cols,
-    zlim = c(global_min, global_max),
-    main = years[i], cex.main = 2.4,
-    axes = FALSE,
-    box = FALSE,
-    legend = FALSE
-  )
+difference_limit <- max(abs(c(
+  terra::global(differences, "min", na.rm = TRUE)[, 1],
+  terra::global(differences, "max", na.rm = TRUE)[, 1]
+)))
+difference_limit <- ceiling(difference_limit * 10) / 10
+
+n_rows <- ceiling(terra::nlyr(raster_stack) / number_of_plot_columns)
+grDevices::png(
+  file.path(plot_dir, sprintf("%s_change_from_%d.png", pollutant, baseline_year)),
+  width = 3600, height = 600 * n_rows, res = 200
+)
+graphics::par(mfrow = c(n_rows, number_of_plot_columns), mar = c(2, 2, 3, 1))
+terra::plot(baseline, col = hcl.colors(30, "YlOrRd"), main = baseline_year,
+            axes = FALSE, box = FALSE)
+for (i in 2:terra::nlyr(differences)) {
+  terra::plot(differences[[i]], col = hcl.colors(31, "Blue-Red 3"),
+              zlim = c(-difference_limit, difference_limit), main = years[i],
+              axes = FALSE, box = FALSE)
 }
-
-# Shared legend in a separate figure region
-par(fig = c(0.92, 0.96, 0.20, 0.80), new = TRUE, mar = c(0, 0, 0, 4))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = c(global_min, global_max))
-
-# Draw vertical colour bar
-ybreaks <- seq(global_min, global_max, length.out = length(cols) + 1)
-
-for (j in seq_along(cols)) {
-  rect(
-    xleft   = 0,
-    ybottom = ybreaks[j],
-    xright  = 0.45,
-    ytop    = ybreaks[j + 1],
-    col     = cols[j],
-    border  = NA
-  )
-}
-
-# Border
-rect(0, global_min, 0.45, global_max, border = "black", lwd = 1)
-
-# Regular ticks on original scale
-ticks <- pretty(c(global_min, global_max), n = 5)
-ticks <- ticks[ticks >= global_min & ticks <= global_max]
-
-axis(
-  4,
-  at = ticks,
-  labels = format(round(ticks, 2), trim = TRUE),
-  las = 1,
-  cex.axis = 0.9
-)
-
-mtext(
-  bquote(pollutant~"("*mu*g~m^{-3}*")"),
-  side = 4,
-  line = 2.5,
-  cex = 0.9
-)
-
-# mtext(
-#   pollutant,
-#   side = 4,
-#   line = 2.5,
-#   cex = 0.9
-# )
-
-dev.off()
-
-# Multipanel plot across years in log 10 scale -------------------------------------------------------
-# Log-transform rasters safely: keep only positive values
-rasters_log <- lapply(rasters_crop, function(r) {
-  ifel(r > 0, log10(r), NA)
-})
-
-# Common min/max across all log-transformed rasters
-mins <- sapply(rasters_log, function(r) global(r, "min", na.rm = TRUE)[1, 1])
-maxs <- sapply(rasters_log, function(r) global(r, "max", na.rm = TRUE)[1, 1])
-
-global_min <- min(mins, na.rm = TRUE)
-global_max <- max(maxs, na.rm = TRUE)
-
-# Colour palette
-cols <- hcl.colors(30, "YlOrRd")
-
-# Layout
-n <- length(rasters_log)
-ncol_plot <- 4
-nrow_plot <- ceiling(n / ncol_plot)
-
-png(
-  file.path(out_png, paste0(pollutant, "_overlap_multipanel_log10_commonlegend.png")),
-  width = 3600,
-  height = 600 * nrow_plot,
-  res = 200
-)
-
-# Main plotting region leaves room on right for legend
-par(
-  mfrow = c(nrow_plot, ncol_plot),
-  mar = c(2, 2, 3, 1),
-  oma = c(0, 0, 0, 16),
-  xpd = NA
-)
-
-# Plot each raster without legend
-for (i in seq_along(rasters_log)) {
-  plot(
-    rasters_log[[i]],
-    col = cols,
-    zlim = c(global_min, global_max),
-    main = years[i], cex.main = 2.4,
-    axes = FALSE,
-    box = FALSE,
-    legend = FALSE
-  )
-}
-
-# Shared legend in a separate figure region farther right
-par(fig = c(0.92, 0.96, 0.20, 0.80), new = TRUE, mar = c(0, 0, 0, 4))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = c(global_min, global_max))
-
-# Draw vertical colour bar
-ybreaks <- seq(global_min, global_max, length.out = length(cols) + 1)
-
-for (j in seq_along(cols)) {
-  rect(
-    xleft   = 0,
-    ybottom = ybreaks[j],
-    xright  = 0.45,
-    ytop    = ybreaks[j + 1],
-    col     = cols[j],
-    border  = NA
-  )
-}
-
-# Border
-rect(0, global_min, 0.45, global_max, border = "black", lwd = 1)
-
-# Legend ticks shown on log10 scale
-ticks_log <- pretty(c(global_min, global_max), n = 5)
-ticks_log <- ticks_log[ticks_log >= global_min & ticks_log <= global_max]
-
-axis(
-  4,
-  at = ticks_log,
-  labels = format(round(ticks_log, 2), trim = TRUE),
-  las = 1,
-  cex.axis = 0.9
-)
-
-mtext(
-  bquote(log[10](.(pollutant)~"("*mu*g~m^{-3}*")")),
-  side = 4,
-  line = 2.5,
-  cex = 0.9
-)
-
-
-dev.off()
-
-
-# difference plot -----------------------------------------------------------
-baseline_year <- years[1]
-baseline <- r_stack[[1]]
-
-# Differences from baseline
-r_diff <- r_stack - baseline
-names(r_diff) <- names(r_stack)
-
-# Baseline scale
-base_min <- global(baseline, "min", na.rm = TRUE)[1, 1]
-base_max <- global(baseline, "max", na.rm = TRUE)[1, 1]
-zlim_base <- c(base_min, base_max)
-ticks_base <- pretty(zlim_base, n = 5)
-ticks_base <- ticks_base[ticks_base >= zlim_base[1] & ticks_base <= zlim_base[2]]
-
-# Difference scale: symmetric around zero
-diff_min <- global(r_diff, "min", na.rm = TRUE)[, 1]
-diff_max <- global(r_diff, "max", na.rm = TRUE)[, 1]
-max_abs <- max(abs(c(diff_min, diff_max)))
-max_abs <- ceiling(max_abs * 10) / 10
-zlim_diff <- c(-max_abs, max_abs)
-ticks_diff <- round(seq(-max_abs, max_abs, length.out = 5), 1)
-
-# Palettes
-cols_base <- hcl.colors(30, "YlOrRd")
-cols_diff <- hcl.colors(31, "Blue-Red 3", rev = FALSE)
-
-n <- nlyr(r_stack)
-ncol_plot <- 4
-nrow_plot <- ceiling(n / ncol_plot)
-
-png(
-  file.path(out_png, paste0(pollutant, "_change_from_", baseline_year, "_baseline_plus_diff_common_legends.png")),
-  width = 4800,
-  height = 700 * nrow_plot,
-  res = 200
-)
-
-par(
-  mfrow = c(nrow_plot, ncol_plot),
-  mar = c(2, 2, 3, 1),
-  oma = c(0, 0, 0, 24),
-  xpd = NA,
-  cex.main = 1.3
-)
-
-# Panel 1: baseline raster
-plot(
-  baseline,
-  col = cols_base,
-  zlim = zlim_base,
-  main = as.character(baseline_year), cex.main = 2.4,
-  axes = FALSE,
-  box = FALSE,
-  legend = FALSE
-)
-
-# Remaining panels: differences
-for (i in 2:nlyr(r_diff)) {
-  plot(
-    r_diff[[i]],
-    col = cols_diff,
-    zlim = zlim_diff,
-    main = paste0(years[i]), cex.main = 2.4,
-    axes = FALSE,
-    box = FALSE,
-    legend = FALSE
-  )
-}
-
-# ----- Baseline legend -----
-par(fig = c(0.90, 0.97, 0.58, 0.88), new = TRUE, mar = c(0, 0, 0, 6))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = zlim_base)
-
-ybreaks_base <- seq(zlim_base[1], zlim_base[2], length.out = length(cols_base) + 1)
-
-for (j in seq_along(cols_base)) {
-  rect(
-    xleft   = 0,
-    ybottom = ybreaks_base[j],
-    xright  = 0.6,
-    ytop    = ybreaks_base[j + 1],
-    col     = cols_base[j],
-    border  = NA
-  )
-}
-
-rect(0, zlim_base[1], 0.6, zlim_base[2], border = "black", lwd = 1.2)
-
-axis(
-  4,
-  at = ticks_base,
-  labels = round(ticks_base, 2),
-  las = 1,
-  cex.axis = 1.3
-)
-
-mtext(
-  paste0(baseline_year, " level"),
-  side = 4,
-  line = 3.5,
-  cex = 1.2
-)
-
-# ----- Difference legend -----
-par(fig = c(0.90, 0.97, 0.14, 0.50), new = TRUE, mar = c(0, 0, 0, 6))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = zlim_diff)
-
-ybreaks_diff <- seq(zlim_diff[1], zlim_diff[2], length.out = length(cols_diff) + 1)
-
-for (j in seq_along(cols_diff)) {
-  rect(
-    xleft   = 0,
-    ybottom = ybreaks_diff[j],
-    xright  = 0.6,
-    ytop    = ybreaks_diff[j + 1],
-    col     = cols_diff[j],
-    border  = NA
-  )
-}
-
-rect(0, zlim_diff[1], 0.6, zlim_diff[2], border = "black", lwd = 1.2)
-
-axis(
-  4,
-  at = ticks_diff,
-  labels = ticks_diff,
-  las = 1,
-  cex.axis = 1.3
-)
-
-mtext(
-  paste0("Difference from", baseline_year),
-  side = 4,
-  line = 3.5,
-  cex = 1.2
-)
-
-dev.off()
-
-
-# another version of difference plot --------------------------------------
-
-
-library(terra)
-
-baseline_year <- years[1]
-baseline <- r_stack[[1]]
-
-# Differences from baseline
-r_diff <- r_stack - baseline
-names(r_diff) <- names(r_stack)
-
-# Baseline scale
-base_min <- global(baseline, "min", na.rm = TRUE)[1, 1]
-base_max <- global(baseline, "max", na.rm = TRUE)[1, 1]
-zlim_base <- c(base_min, base_max)
-
-ticks_base <- pretty(zlim_base, n = 5)
-ticks_base <- ticks_base[ticks_base >= zlim_base[1] & ticks_base <= zlim_base[2]]
-
-# Difference scale: symmetric around zero
-diff_min <- global(r_diff, "min", na.rm = TRUE)[, 1]
-diff_max <- global(r_diff, "max", na.rm = TRUE)[, 1]
-max_abs <- max(abs(c(diff_min, diff_max)))
-max_abs <- ceiling(max_abs * 10) / 10
-zlim_diff <- c(-max_abs, max_abs)
-
-ticks_diff <- round(seq(-max_abs, max_abs, length.out = 5), 1)
-
-# Palettes
-cols_base <- hcl.colors(30, "YlOrRd")
-cols_diff <- hcl.colors(31, "Blue-Red 3", rev = FALSE)
-
-# Layout
-n <- nlyr(r_stack)
-ncol_plot <- 4
-nrow_plot <- ceiling(n / ncol_plot)
-n_map_slots <- nrow_plot * ncol_plot
-
-# Layout matrix: map panels + 1 legend column
-lay <- matrix(0, nrow = nrow_plot, ncol = ncol_plot + 1)
-lay[, 1:ncol_plot] <- matrix(seq_len(n_map_slots), nrow = nrow_plot, byrow = TRUE)
-
-id_base_legend <- n_map_slots + 1
-id_diff_legend <- n_map_slots + 2
-
-top_rows <- seq_len(max(1, ceiling(nrow_plot / 2)))
-bottom_rows <- seq(ceiling(nrow_plot / 2) + 1, nrow_plot)
-
-lay[top_rows, ncol_plot + 1] <- id_base_legend
-if (length(bottom_rows) > 0 && all(bottom_rows >= 1) && all(bottom_rows <= nrow_plot)) {
-  lay[bottom_rows, ncol_plot + 1] <- id_diff_legend
-} else {
-  lay[top_rows, ncol_plot + 1] <- id_diff_legend
-}
-
-png(
-  file.path(
-    out_png,
-    paste0(pollutant, "_change_from_", baseline_year, "_baseline_plus_diff_legends_layout_v2.png")
-  ),
-  width = 4800,
-  height = 750 * nrow_plot,
-  res = 200
-)
-
-layout(
-  lay,
-  widths = c(rep(1, ncol_plot), 0.55),
-  heights = rep(1, nrow_plot)
-)
-
-# ----- Map panels -----
-par(mar = c(2, 2, 4, 1), cex.main = 2.0)
-
-# Panel 1: baseline raster
-plot(
-  baseline,
-  col = cols_base,
-  zlim = zlim_base,
-  main = as.character(baseline_year),
-  axes = FALSE,
-  box = FALSE,
-  legend = FALSE
-)
-
-# Remaining panels: differences
-for (i in 2:nlyr(r_diff)) {
-  plot(
-    r_diff[[i]],
-    col = cols_diff,
-    zlim = zlim_diff,
-    main = paste0(years[i]),
-    axes = FALSE,
-    box = FALSE,
-    legend = FALSE
-  )
-}
-
-# Fill unused map slots if needed
-if (n < n_map_slots) {
-  for (k in seq_len(n_map_slots - n)) {
-    par(mar = c(0, 0, 0, 0))
-    plot.new()
-  }
-}
-
-# ----- Baseline legend -----
-par(mar = c(2, 1, 3, 4))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = zlim_base)
-
-ybreaks_base <- seq(zlim_base[1], zlim_base[2], length.out = length(cols_base) + 1)
-
-for (j in seq_along(cols_base)) {
-  rect(
-    xleft = 0.18,
-    ybottom = ybreaks_base[j],
-    xright = 0.38,
-    ytop = ybreaks_base[j + 1],
-    col = cols_base[j],
-    border = NA
-  )
-}
-
-rect(0.18, zlim_base[1], 0.38, zlim_base[2], border = "black", lwd = 1)
-
-axis(
-  4,
-  at = ticks_base,
-  labels = round(ticks_base, 2),
-  las = 1,
-  cex.axis = 1.0
-)
-
-mtext(
-  paste0(baseline_year, " level"),
-  side = 3,
-  line = 0.5,
-  cex = 1.0,
-  font = 2
-)
-
-# ----- Difference legend -----
-par(mar = c(2, 1, 3, 4))
-plot.new()
-plot.window(xlim = c(0, 1), ylim = zlim_diff)
-
-ybreaks_diff <- seq(zlim_diff[1], zlim_diff[2], length.out = length(cols_diff) + 1)
-
-for (j in seq_along(cols_diff)) {
-  rect(
-    xleft = 0.18,
-    ybottom = ybreaks_diff[j],
-    xright = 0.38,
-    ytop = ybreaks_diff[j + 1],
-    col = cols_diff[j],
-    border = NA
-  )
-}
-
-rect(0.18, zlim_diff[1], 0.38, zlim_diff[2], border = "black", lwd = 1)
-
-axis(
-  4,
-  at = ticks_diff,
-  labels = ticks_diff,
-  las = 1,
-  cex.axis = 1.0
-)
-
-mtext(
-  paste0("Difference from ", baseline_year),
-  side = 3,
-  line = 0.5,
-  cex = 1.0,
-  font = 2
-)
-
-dev.off()
-
+grDevices::dev.off()
+
+message("Wrote raw GeoTIFFs to: ", raw_tif_dir)
+message("Wrote aligned GeoTIFFs to: ", overlap_tif_dir)
+message("Wrote diagnostic maps to: ", plot_dir)
