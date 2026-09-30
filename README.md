@@ -18,12 +18,12 @@ The principal outputs are:
   <img
     src="figure/ndvi_2003.png"
     alt="Aggregated NDVI values by LSOA in 2003"
-    style="width: 49%; height: auto; display: inline-block; vertical-align: top;"
+    style="width: 40%; height: auto; display: inline-block; vertical-align: top;"
   >
   <img
     src="figure/ndvi_2020.png"
     alt="Aggregated NDVI values by LSOA in 2020"
-    style="width: 49%; height: auto; display: inline-block; vertical-align: top;"
+    style="width: 40%; height: auto; display: inline-block; vertical-align: top;"
   >
   <figcaption>
     <strong>Figure:</strong> Aggregated NDVI calculated by averaging raster-derived NDVI values within each LSOA: left, 2003; right, 2020.
