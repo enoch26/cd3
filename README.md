@@ -14,6 +14,11 @@ The principal outputs are:
 
 > **Important:** Several inputs are not intrinsically available on 2021 LSOA boundaries. The project uses geographic area weights for historic LSOA counts and assigns smoking values at LAD level. These transformations should be accounted for in downstream interpretation.
 
+<figure>
+  <img src="figure/ndvi_2003.png" alt="Aggregated>Figure:</strong> Spatial distribution of NDVI in 2003. NDVI values were derived from raster data and averaged within each LSOA.
+  </figcaption>
+</figure>
+
 ## Project structure
 
 A typical project layout is:
