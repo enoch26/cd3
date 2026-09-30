@@ -14,16 +14,16 @@ The principal outputs are:
 
 > **Important:** Several inputs are not intrinsically available on 2021 LSOA boundaries. The project uses geographic area weights for historic LSOA counts and assigns smoking values at LAD level. These transformations should be accounted for in downstream interpretation.
 
-<figure style="width: 50%; max-width: 700px; min-width: 0; margin: 0;">
+<figure style="width: 40%; max-width: 700px; min-width: 0; margin: 0;">
   <img
     src="figure/ndvi_2003.png"
     alt="Aggregated NDVI values by LSOA in 2003"
-    style="width: 40%; height: auto; display: inline-block; vertical-align: top;"
+    style="width: 35%; height: auto; display: inline-block; vertical-align: top;"
   >
   <img
     src="figure/ndvi_2020.png"
     alt="Aggregated NDVI values by LSOA in 2020"
-    style="width: 40%; height: auto; display: inline-block; vertical-align: top;"
+    style="width: 35%; height: auto; display: inline-block; vertical-align: top;"
   >
   <figcaption>
     <strong>Figure:</strong> Aggregated NDVI calculated by averaging raster-derived NDVI values within each LSOA: left, 2003; right, 2020.
