@@ -26,7 +26,7 @@ The principal outputs are:
     </tr>
   </table>
   <figcaption>
-    <strong>Figure:</strong> Aggregated NDVI calculated by averaging raster-derived NDVI values within each LSOA: left, 2003; right, 2020.
+    <strong>Figure:</strong> Annual aggregated NDVI calculated by averaging raster-derived NDVI values within each LSOA: left, 2003; right, 2020.
   </figcaption>
 </figure>
 
