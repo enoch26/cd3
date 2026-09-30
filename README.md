@@ -39,7 +39,7 @@ A typical project layout is:
 project-root/
 ├── README.md
 ├── lsoa11221.R
-├── download_ons.R
+├── bulk_download_website.R
 ├── pop.R
 ├── read_defra_pollutants.R
 ├── air_extract.R
@@ -85,7 +85,7 @@ The script creates or exposes objects including:
 
 **Methodological note:** Area weights are appropriate for additive values such as counts, under an assumption of uniform within-area distribution. Do not directly use them to transfer rates, percentages, means, medians, or other non-additive measures. Where possible, transfer numerators and denominators separately and recalculate the rate.
 
-### `download_ons.R` — ONS data download helper
+### `bulk_download_website.R` — ONS data download helper
 
 Downloads required ONS datasets recursively. Use this script before running workflows that depend on LSOA boundaries, lookup tables, or population-estimate workbooks.
 
