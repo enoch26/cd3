@@ -8,7 +8,7 @@ The principal outputs are:
 
 - Area-weighted LSOA correspondence tables for 2001, 2011, and 2021 geographies.
 - Annual population estimates for 2002–2024 on 2021 English LSOA boundaries.
-- Annual aggreagted NDVI for 2003–2020 on 2021 English LSOA boundaries (see function/).
+- Annual aggreagated NDVI for 2003–2020 on 2021 English LSOA boundaries (see function/).
 - Annual DEFRA PCM pollutant rasters and LSOA-level pollutant exposures.
 - Annual LSOA-level ozone exposure estimates.
 - LAD-contextual APS smoking-prevalence variables assigned to 2021 LSOAs.
