@@ -42,3 +42,4 @@ data/
 outputs/
 .positai
 *:Zone.Identifier
+/misc/*
