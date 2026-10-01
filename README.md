@@ -282,7 +282,7 @@ author = {Suen, Man Ho},
 title = {LSOA 2021 Exposure Data Pipeline: Harmonised Environmental and Contextual Exposure Data for English 2021 Lower-layer Super Output Areas},
 year = {2026},
 version = {1.0},
-url = {https://github.com/USERNAME/REPOSITORY},
+url = {https://github.com/enoch26/cd3},
 note = {R scripts and workflows for generating annual environmental and contextual exposure datasets on 2021 English LSOA boundaries, including population estimates, NDVI, air pollution, ozone, and smoking prevalence indicators}
 }
 ```
