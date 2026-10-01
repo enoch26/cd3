@@ -271,7 +271,8 @@ Before analysis, verify that:
 
 Cite and comply with the terms of the original data providers: ONS, DEFRA/UK-AIR, and OHID. These scripts create derived datasets; they do not replace the source documentation or source-specific quality guidance.
 
-If you use this repository, please cite:
+If you use this repository, please cite: 
+
 Suen, M. H. (2026). *LSOA 2021 Exposure Data Pipeline: Harmonised Environmental and Contextual Exposure Data for English 2021 Lower-layer Super Output Areas* (Version 1.0) [Computer software]. GitHub. https://github.com/enoch26/cd3
 
 ### BibTeX
