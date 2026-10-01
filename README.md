@@ -277,7 +277,7 @@ Suen, M. H. (2026). *LSOA 2021 Exposure Data Pipeline: Harmonised Environmental 
 ### BibTeX
 
 ```bibtex
-@software{suen2026lsoa,
+@misc{suen2026lsoa,
 author = {Suen, Man Ho},
 title = {LSOA 2021 Exposure Data Pipeline: Harmonised Environmental and Contextual Exposure Data for English 2021 Lower-layer Super Output Areas},
 year = {2026},
