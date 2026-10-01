@@ -270,3 +270,19 @@ Before analysis, verify that:
 ## Citation and use
 
 Cite and comply with the terms of the original data providers: ONS, DEFRA/UK-AIR, and OHID. These scripts create derived datasets; they do not replace the source documentation or source-specific quality guidance.
+
+If you use this repository, please cite:
+Suen, M. H. (2026). *LSOA 2021 Exposure Data Pipeline: Harmonised Environmental and Contextual Exposure Data for English 2021 Lower-layer Super Output Areas* (Version 1.0) [Computer software]. GitHub. https://github.com/USERNAME/REPOSITORY
+
+### BibTeX
+
+```bibtex
+@software{suen2026lsoa,
+author = {Suen, Man Ho},
+title = {LSOA 2021 Exposure Data Pipeline: Harmonised Environmental and Contextual Exposure Data for English 2021 Lower-layer Super Output Areas},
+year = {2026},
+version = {1.0},
+url = {https://github.com/USERNAME/REPOSITORY},
+note = {R scripts and workflows for generating annual environmental and contextual exposure datasets on 2021 English LSOA boundaries, including population estimates, NDVI, air pollution, ozone, and smoking prevalence indicators}
+}
+```
