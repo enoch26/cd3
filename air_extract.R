@@ -35,19 +35,14 @@ library(here)
 # raster data, or it will be transformed below.
 source(here::here("lsoa11221.R"))
 
-# Retain this only if it performs setup required elsewhere in your project.
-# It is not otherwise used directly in this extraction workflow.
-if (file.exists(here::here("ozone.R"))) {
-  source(here::here("ozone.R"))
-}
-
 if (!exists("poly_lsoa_21") || !inherits(poly_lsoa_21, "sf")) {
   stop("`lsoa11221.R` must create `poly_lsoa_21` as an sf object.")
 }
 
 # Configuration ------------------------------------------------------------
 data_dir <- here::here("data")
-output_file <- here::here("air_lsoa_eng.gpkg")
+output_dir <- here::here("outputs")
+output_file <- file.path(output_dir, "air_lsoa_eng.gpkg")
 
 pollutants <- c("benzene", "pm25", "pm10", "nox")
 years <- 2003:2024
@@ -116,6 +111,7 @@ for (pollutant in pollutants) {
 # `delete_dsn = TRUE` replaces an existing GeoPackage at this path. Change it
 # to FALSE, or provide a versioned output filename, if the existing file must
 # be retained.
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 sf::st_write(
   poly_lsoa_21,
   dsn = output_file,

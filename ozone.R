@@ -9,7 +9,7 @@
 #
 # Expected project layout:
 #   <project root>/
-#   ├── build_lsoa_ozone_exposure_parallel.R
+#   ├── ozone.R
 #   ├── lsoa11221.R                         # creates `poly_lsoa_21`
 #   └── data/
 #       └── defra/

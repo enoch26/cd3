@@ -19,7 +19,7 @@
 #
 # Expected project layout:
 #   <project root>/
-#   ├── build_lsoa_smoking_aps_exposure.R
+#   ├── fingertips.R
 #   └── data/
 #       └── lsoa/
 #           └── LSOA_(2011)_to_LSOA_(2021)_to_Local_Authority_District_(2022)_
