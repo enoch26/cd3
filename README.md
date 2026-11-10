@@ -18,8 +18,8 @@ The NDVI maps below are retained as example figures showing normalized differenc
 ### LSOA Aggregation Workflow
 
 <figure style="width: 100%; margin: 20px 0;">
-  <img src="figure/lsoa_aggregation_workflow.png" alt="Four-panel diagram explaining the LSOA aggregation process" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
-  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA 2021 administrative boundaries (33,755 areas in England). (Panel 3) Overlay showing how raster cells intersect with LSOA polygons. (Panel 4) Final aggregated values, one per LSOA. Raster cells are weighted by their intersection area with each LSOA polygon.</figcaption>
+  <img src="figure/lsoa_aggregation_workflow.png" alt="Five-panel diagram explaining the LSOA aggregation process and 2011-2021 projection" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
+  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow from raster to 2021 LSOA boundaries. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA boundary misalignment: blue solid lines show 2011 boundaries; red dashed lines show 2021 boundaries. Where source data uses 2011 boundaries, <code>lsoa11221.R</code> or <a href="lsoa11221.py"><code>lsoa11221.py</code></a> computes area-weighted crosswalks to project onto 2021 boundaries. (Panel 3) Target LSOA 2021 administrative boundaries (33,755 areas in England). (Panel 4) Aggregation process with raster cell values overlaid on LSOA polygons. (Panel 5) Final area-weighted aggregated values, one per LSOA on 2021 boundaries. Raster cells are weighted by their intersection area with each LSOA polygon. This workflow figure was generated using Python (<code>matplotlib</code>, <code>geopandas</code>); a similar visualization can be reproduced by adapting the boundary-loading and aggregation logic from <a href="lsoa11221.py"><code>lsoa11221.py</code></a> and <a href="air_extract.py"><code>air_extract.py</code></a>.</figcaption>
 </figure>
 
 ## Repository layout
