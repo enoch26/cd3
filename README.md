@@ -41,6 +41,14 @@ The NDVI maps below are retained as example figures. The repository does not cur
 
 Run R scripts from the repository root so `here::here()` resolves paths as expected. The `data/` and `outputs/` folders are intentionally not committed; obtain the source data separately and check each script's input filenames and assumptions.
 
+## For AI Assistants and Copilot Users
+
+See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for detailed guidance on working in this repository, including:
+- Script execution order and dependencies
+- Key conventions (path resolution, configuration patterns, area-weighting rules)
+- Data validation expectations
+- Troubleshooting common issues
+
 ## Script guide
 
 | Script | Purpose | Main outputs |

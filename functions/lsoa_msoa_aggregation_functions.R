@@ -1,4 +1,4 @@
-# LSOA-to-MSOA spatial aggregation helper ------------------------------------
+# LSOA-to-MSOA spatial aggregation helper --------------------------------------
 #
 # This file contains a reusable helper for aggregating attributes attached to
 # LSOA polygons to MSOA polygons. It is intended for use with `sf` objects.

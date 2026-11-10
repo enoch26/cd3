@@ -1,4 +1,4 @@
-# LSOA 2001, 2011 and 2021 area-weight lookup functions ---------------------
+# LSOA 2001, 2011 and 2021 area-weight lookup functions ------------------------
 #
 # Purpose
 # -------

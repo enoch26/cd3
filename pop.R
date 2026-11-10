@@ -1,4 +1,4 @@
-# Annual population estimates on 2021 English LSOAs --------------------------
+# Annual population estimates on 2021 English LSOAs ----------------------------
 #
 # Purpose:
 #   Build a consistent 2002–2024 annual population dataset on 2021 English
@@ -35,7 +35,7 @@
 #   area weights. This is suitable for additive counts, subject to the usual
 #   assumption of a uniform population distribution within each source LSOA.
 
-# Packages -----------------------------------------------------------------
+# Packages ---------------------------------------------------------
 required_packages <- c("sf", "here", "readxl", "dplyr", "purrr", "tidyr",
                        "tibble", "readr", "stringr", "data.table")
 missing_packages <- required_packages[!vapply(
@@ -48,7 +48,7 @@ if (length(missing_packages) > 0L) {
 
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# Paths and geography/crosswalk setup --------------------------------------
+# Configuration ----------------------------------------------------
 population_dir <- here::here("data", "lsoa_pop_est_sing")
 output_file <- here::here("data", "pop_regrouped_2002_2024.csv")
 crosswalk_script <- here::here("lsoa11221.R")
@@ -79,7 +79,7 @@ if (!all(c("LSOA21CD", "LSOA21NM") %in% names(poly_lsoa_21))) {
   stop("`poly_lsoa_21` must contain `LSOA21CD` and `LSOA21NM`.", call. = FALSE)
 }
 
-# Reusable helpers ---------------------------------------------------------
+# Reusable helpers -------------------------------------------------
 # Convert requested columns to numeric safely, allowing Excel cells that were
 # imported as text (including values with commas or other display formatting).
 as_numeric_columns <- function(data, columns) {
@@ -126,7 +126,7 @@ regroup_old_syoa <- function(data, year, sex, source_file) {
     )
 }
 
-# Read and regroup 2002–2010 source files ----------------------------------
+# Read and regroup 2002–2010 source files --------------------------
 old_files <- list.files(
   population_dir,
   pattern = "\\.xls$",
@@ -165,7 +165,7 @@ old_population_2011 <- old_sheet_index |>
   select(grouped) |>
   tidyr::unnest(grouped)
 
-# Allocate 2002–2010 counts from 2011 LSOAs to 2021 LSOAs -----------------
+# Allocate 2002–2010 counts from 2011 LSOAs to 2021 LSOAs ----------
 # Counts are additive, so each source value is multiplied by its crosswalk
 # weight and then summed within the target LSOA and year.
 old_population_2021 <- merge(
@@ -229,7 +229,7 @@ old_population_2021 <- old_population_2021 |>
     total, f_25_49, f_50_74, f_75_plus, m_25_49, m_50_74, m_75_plus
   )
 
-# Read and regroup 2011–2024 source files ----------------------------------
+# Read and regroup 2011–2024 source files --------------------------
 new_files <- list.files(
   population_dir,
   pattern = "^sapelsoasyoa.*\\.xlsx$",
@@ -268,7 +268,7 @@ new_population_2021 <- new_sheet_index |>
     m_75_plus = sum_age_columns(pick(everything()), paste0("M", 75:90))
   )
 
-# Combine, validate, and export --------------------------------------------
+# Combine, validate, and export ------------------------------------
 population_2002_2024 <- bind_rows(old_population_2021, new_population_2021) |>
   filter(stringr::str_starts(lsoa_2021_code, "E")) |>
   arrange(lsoa_2021_code, year)

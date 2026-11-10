@@ -33,7 +33,7 @@
 # periods. The wide file contains one column per single-year period only, named
 # smokeYYYY (for example, smoke2021).
 
-# Packages -----------------------------------------------------------------
+# Packages ---------------------------------------------------------
 required_packages <- c("dplyr", "fingertipsR", "here", "readr", "tidyr")
 missing_packages <- required_packages[!vapply(
   required_packages, requireNamespace, logical(1), quietly = TRUE
@@ -45,7 +45,7 @@ if (length(missing_packages) > 0L) {
 
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# Configuration ------------------------------------------------------------
+# Configuration ----------------------------------------------------
 # Indicator 92443: Smoking Prevalence in adults (aged 18 and over) - current
 # smokers (APS). Recheck the Fingertips metadata before reproducing analyses:
 # indicator definitions and available periods can change between releases.
@@ -72,7 +72,7 @@ if (!file.exists(lookup_file)) {
   )
 }
 
-# Optional metadata exploration -------------------------------------------
+# Optional metadata exploration ------------------------------------
 # Set to TRUE to list Smoking Profile indicators before selecting an ID.
 # This block is not required to produce the two output datasets.
 inspect_smoking_metadata <- FALSE
@@ -91,7 +91,7 @@ if (inspect_smoking_metadata) {
   )
 }
 
-# Read the England-only LSOA-to-LAD lookup --------------------------------
+# Read the England-only LSOA-to-LAD lookup -------------------------
 # LAD codes beginning E identify English authorities. The exact-fit lookup
 # contains a 2021 LSOA code and a LAD 2022 code for each relationship.
 lsoa_lad_lookup <- readr::read_csv(lookup_file, show_col_types = FALSE) |>
@@ -110,7 +110,7 @@ if (anyDuplicated(lsoa_lad_lookup$LSOA21CD)) {
   )
 }
 
-# Download and select APS smoking estimates --------------------------------
+# Download and select APS smoking estimates ------------------------
 # AreaTypeID = "All" retrieves every geographic resolution available for this
 # indicator. The filters retain LAD, Persons, age 18+ records only.
 smoking_raw <- fingertipsR::fingertips_data(
@@ -153,7 +153,7 @@ if (anyDuplicated(smoking_lad[c("Timeperiod", "LAD22CD")])) {
   stop("More than one smoking value exists for at least one LAD-period combination.", call. = FALSE)
 }
 
-# Handle LAD boundary changes ----------------------------------------------
+# Handle LAD boundary changes --------------------------------------
 # North and West Northamptonshire replaced seven predecessor districts in
 # April 2021. If an estimate for the successor LAD is unavailable, fill it
 # with the UNWEIGHTED mean of available predecessor-LAD percentages in the
@@ -221,7 +221,7 @@ smoking_lad <- smoking_lad |>
   tidyr::fill(smoking_prev, .direction = "downup") |>
   dplyr::ungroup()
 
-# Construct long and annual-wide LSOA datasets -----------------------------
+# Construct long and annual-wide LSOA datasets ---------------------
 # The long output preserves all API periods, including multi-year periods.
 lsoa_smoking_long <- lsoa_lad_lookup |>
   dplyr::left_join(smoking_lad, by = "LAD22CD") |>
@@ -246,7 +246,7 @@ lsoa_smoking_wide <- lsoa_lad_lookup |>
   ) |>
   dplyr::arrange(LSOA21CD)
 
-# Quality assurance ---------------------------------------------------------
+# Quality assurance ------------------------------------------------
 expected_lsoa_count <- dplyr::n_distinct(lsoa_lad_lookup$LSOA21CD)
 actual_long_count <- dplyr::n_distinct(lsoa_smoking_long$LSOA21CD)
 actual_wide_count <- dplyr::n_distinct(lsoa_smoking_wide$LSOA21CD)
@@ -262,7 +262,7 @@ message("English LSOAs in output: ", expected_lsoa_count)
 message("Missing smoking values in long output: ", sum(is.na(lsoa_smoking_long$smoking_prev)))
 message("Available annual smoking columns: ", paste(grep("^smoke[0-9]{4}$", names(lsoa_smoking_wide), value = TRUE), collapse = ", "))
 
-# Write outputs -------------------------------------------------------------
+# Write outputs ----------------------------------------------------
 readr::write_csv(lsoa_smoking_long, long_output)
 readr::write_csv(lsoa_smoking_wide, wide_output)
 

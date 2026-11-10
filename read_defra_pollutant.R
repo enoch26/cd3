@@ -1,4 +1,4 @@
-# DEFRA PCM annual CSV grids -> aligned GeoTIFFs and diagnostic maps ----------
+# DEFRA PCM annual CSV grids -> aligned GeoTIFFs and diagnostic maps -----------
 #
 # Purpose:
 #   Convert annual DEFRA PCM model-output CSV files (annual mean concentrations
@@ -23,7 +23,7 @@
 #   * the concentration field is the fourth data column; and
 #   * cells are on a 1 km grid.
 
-# Packages ------------------------------------------------------------------
+# Packages ---------------------------------------------------------
 required_packages <- c("terra", "dplyr", "readr", "stringr", "here")
 missing_packages <- required_packages[!vapply(
   required_packages, requireNamespace, logical(1), quietly = TRUE
@@ -31,7 +31,7 @@ missing_packages <- required_packages[!vapply(
 if (length(missing_packages) > 0L) install.packages(missing_packages)
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# Configuration -------------------------------------------------------------
+# Configuration ----------------------------------------------------
 # Run once per pollutant, e.g. "benzene", "pm25", "pm10", or "nox".
 pollutant <- "pm25"
 input_dir <- here::here("data", "defra", pollutant)
@@ -59,7 +59,7 @@ if (length(csv_files) == 0L) {
   stop("No CSV files found in: ", input_dir, call. = FALSE)
 }
 
-# Helpers -------------------------------------------------------------------
+# Helpers ----------------------------------------------------------
 extract_year <- function(path, metadata_year = NA_integer_) {
   if (!is.na(metadata_year)) return(metadata_year)
 
@@ -175,7 +175,7 @@ plot_multipanel <- function(rasters, years, filename, title_suffix = "", log10_s
   graphics::mtext(title_suffix, side = 3, outer = TRUE, line = -1)
 }
 
-# Read, write and align rasters --------------------------------------------
+# Read, write and align rasters ------------------------------------
 products <- lapply(csv_files, read_pcm_raster)
 years <- vapply(products, `[[`, integer(1), "year")
 if (anyDuplicated(years)) stop("More than one input CSV was assigned to a year.", call. = FALSE)
@@ -208,7 +208,7 @@ for (i in seq_along(overlap_rasters)) {
   )
 }
 
-# Diagnostic maps ----------------------------------------------------------
+# Diagnostic maps --------------------------------------------------
 plot_multipanel(
   overlap_rasters, years,
   file.path(plot_dir, paste0(pollutant, "_overlap_multipanel.png")),

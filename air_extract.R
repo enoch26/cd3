@@ -1,4 +1,4 @@
-# LSOA-level annual air-pollution concentrations ---------------------------------
+# LSOA-level annual air-pollution concentrations -------------------------------
 #
 # Purpose:
 #   Extract area-weighted mean values from annual DEFRA PCM rasters to 2021
@@ -24,12 +24,13 @@
 #
 # The output columns use names such as `benzene2003`, `pm252010`, and `nox2024`.
 
-# Packages -----------------------------------------------------------------
+# Packages ---------------------------------------------------------
 library(terra)
 library(sf)
 library(here)
 
-# Load project-specific geography setup ------------------------------------
+# Configuration ----------------------------------------------------
+# Load project-specific geography setup.
 # This file must create `poly_lsoa_21`: an `sf` object containing 2021 English
 # LSOA polygons. Its coordinate reference system should be appropriate for the
 # raster data, or it will be transformed below.
@@ -39,7 +40,6 @@ if (!exists("poly_lsoa_21") || !inherits(poly_lsoa_21, "sf")) {
   stop("`lsoa11221.R` must create `poly_lsoa_21` as an sf object.")
 }
 
-# Configuration ------------------------------------------------------------
 data_dir <- here::here("data")
 output_dir <- here::here("outputs")
 output_file <- file.path(output_dir, "air_lsoa_eng.gpkg")
@@ -92,7 +92,7 @@ extract_lsoa_mean <- function(raster_file, lsoa_polygons) {
   values[[1L]]
 }
 
-# Extract every pollutant-year combination --------------------------------
+# Extract every pollutant-year combination -------------------------
 # Values are appended to the original `sf` layer so that LSOA identifiers and
 # attributes supplied by `lsoa11221.R` are preserved.
 for (pollutant in pollutants) {
@@ -107,7 +107,7 @@ for (pollutant in pollutants) {
   }
 }
 
-# Write output -------------------------------------------------------------
+# Write output -----------------------------------------------------
 # `delete_dsn = TRUE` replaces an existing GeoPackage at this path. Change it
 # to FALSE, or provide a versioned output filename, if the existing file must
 # be retained.
@@ -120,7 +120,7 @@ sf::st_write(
   quiet = FALSE
 )
 
-# Optional raster maps -----------------------------------------------------
+# Optional raster maps ---------------------------------------------
 # Set to TRUE to plot all four pollutants for a selected year. These maps show
 # raster values rather than LSOA-level extracted values.
 make_maps <- FALSE

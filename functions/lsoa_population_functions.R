@@ -1,4 +1,4 @@
-# LSOA population estimates harmonised to LSOA 2021 --------------------------
+# LSOA population estimates harmonised to LSOA 2021 ----------------------------
 #
 # Purpose
 # -------

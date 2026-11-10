@@ -1,4 +1,4 @@
-# LSOA 2001–2021 area-weighted crosswalks -------------------------------------
+# LSOA 2001-2021 area-weighted crosswalks --------------------------------------
 #
 # Purpose:
 #   Build England-only LSOA correspondence weights for:
@@ -34,11 +34,13 @@
 #     https://geoportal.statistics.gov.uk/datasets/ons::lower-layer-super-output-areas-december-2011-boundaries-ew-bfc-v3/about
 #   * 2021 boundary: obtain the EW BFE release named below.
 
+# Packages ---------------------------------------------------------
 library(sf)
 library(dplyr)
 library(data.table)
 library(here)
 
+# Configuration ----------------------------------------------------
 # Use British National Grid: coordinates are measured in metres, making it
 # appropriate for polygon-area calculations.
 area_crs <- 27700
@@ -179,7 +181,7 @@ build_area_weights <- function(source_polygons, target_polygons, lookup,
   weights[]
 }
 
-# 2011 -> 2021 ---------------------------------------------------------------
+# 2011 -> 2021 -----------------------------------------------------
 lookup_wgt_11_21 <- build_area_weights(
   source_polygons = poly_lsoa_11,
   target_polygons = poly_lsoa_21,
@@ -189,7 +191,7 @@ lookup_wgt_11_21 <- build_area_weights(
   weight_column = "LSOA11WGT"
 )
 
-# 2001 -> 2011 ---------------------------------------------------------------
+# 2001 -> 2011 -----------------------------------------------------
 lookup_wgt_01_11 <- build_area_weights(
   source_polygons = poly_lsoa_01,
   target_polygons = poly_lsoa_11,
@@ -199,7 +201,7 @@ lookup_wgt_01_11 <- build_area_weights(
   weight_column = "LSOA01WGT"
 )
 
-# 2001 -> 2021, chained through 2011 ----------------------------------------
+# 2001 -> 2021, chained through 2011 -------------------------------
 # Multiply weights along each 2001 -> 2011 -> 2021 path, then sum any paths
 # that end at the same 2021 LSOA.
 lookup_wgt_01_21 <- merge(
@@ -216,7 +218,7 @@ lookup_wgt_01_21 <- merge(
 ]
 setorder(lookup_wgt_01_21, LSOA01CD, LSOA21CD)
 
-# Quality assurance ----------------------------------------------------------
+# Quality assurance ------------------------------------------------
 # Report source areas whose weights do not sum to one within `tolerance`.
 check_weight_sums <- function(weights, source_code, weight_column,
                               tolerance = 1e-8) {
@@ -242,7 +244,7 @@ check_11_21 <- check_weight_sums(lookup_wgt_11_21, "LSOA11CD", "LSOA11WGT")
 check_01_11 <- check_weight_sums(lookup_wgt_01_11, "LSOA01CD", "LSOA01WGT")
 check_01_21 <- check_weight_sums(lookup_wgt_01_21, "LSOA01CD", "LSOA01WGT21")
 
-# Save outputs ---------------------------------------------------------------
+# Save outputs -----------------------------------------------------
 fwrite(lookup_wgt_11_21, file.path(output_dir, "lsoa_2011_to_2021_area_weights.csv"))
 fwrite(lookup_wgt_01_11, file.path(output_dir, "lsoa_2001_to_2011_area_weights.csv"))
 fwrite(lookup_wgt_01_21, file.path(output_dir, "lsoa_2001_to_2021_area_weights.csv"))

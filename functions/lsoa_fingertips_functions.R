@@ -1,4 +1,4 @@
-# Generic LSOA 2021 Fingertips indicator workflow -----------------------------
+# Generic LSOA 2021 Fingertips indicator workflow ------------------------------
 #
 # Maps England district-level Fingertips indicators to 2021 LSOAs using the
 # official ONS LSOA 2011 -> LSOA 2021 -> LAD 2022 Exact Fit Lookup.
@@ -245,7 +245,7 @@ build_lsoa_indicator <- function(
   output
 }
 
-# Examples -----------------------------------------------------------------
+# Examples ---------------------------------------------------------
 # Find a suitable indicator and its available dimensions first:
 # https://github.com/ropensci/fingertipsR
 # fingertipsR::profiles()

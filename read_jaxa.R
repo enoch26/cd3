@@ -1,4 +1,4 @@
-# JAXA GLI / MODIS / SeaWiFS SWR and PAR binary-grid reader ------------------
+# JAXA GLI / MODIS / SeaWiFS SWR and PAR binary-grid reader --------------------
 #
 # Purpose:
 #   Read JAXA EORC Level-3 direct-access, unformatted binary files, convert
@@ -24,11 +24,11 @@
 #   value convention against the readme supplied with the particular product.
 #   If values are implausible, first try `endian = "big"`.
 
-# Packages -----------------------------------------------------------------
+# Packages ---------------------------------------------------------
 library(terra)
 library(here)
 
-# Configuration ------------------------------------------------------------
+# Configuration ----------------------------------------------------
 # `here::here()` makes all paths relative to the root of the R project.
 input_dir <- here::here("data", "jaxa_swr")
 output_dir <- here::here("outputs", "swr")
@@ -44,7 +44,7 @@ add_offset <- 0
 byte_order <- "little"
 missing_raw_values <- integer(0)  # e.g., c(-9999) if documented for a product
 
-# Fixed-width header parser -------------------------------------------------
+# Fixed-width header parser ----------------------------------------
 # The documented Fortran layout is:
 # (2I6, 2F8.2, F8.4, 2E12.5, A1, A8, A1, A40)
 parse_jaxa_header <- function(header_text) {
@@ -76,7 +76,7 @@ parse_jaxa_header <- function(header_text) {
   )
 }
 
-# Binary reader -------------------------------------------------------------
+# Binary reader ----------------------------------------------------
 # Reads all image values after the fixed-length header. `raw` is returned as a
 # matrix with rows from north to south and columns from west to east.
 read_jaxa_product <- function(path,
@@ -153,7 +153,7 @@ read_jaxa_product <- function(path,
   )
 }
 
-# Raster constructor --------------------------------------------------------
+# Raster constructor -----------------------------------------------
 # The coordinates supplied are the centre coordinates of the upper-left cell.
 make_jaxa_raster <- function(value_matrix,
                              resolution = cell_size,
@@ -173,7 +173,7 @@ make_jaxa_raster <- function(value_matrix,
   terra::rotate(raster)
 }
 
-# Locate source files -------------------------------------------------------
+# Locate source files ----------------------------------------------
 # Each JAXA data file has no extension and ends with the product identifier.
 # Amend the pattern if your downloaded file names differ.
 product_files <- list.files(
@@ -187,7 +187,7 @@ if (length(product_files) == 0L) {
   stop("No MOD02SSH SWR files found below: ", input_dir, call. = FALSE)
 }
 
-# Process every daily file --------------------------------------------------
+# Process every daily file -----------------------------------------
 # Set `write_png` to FALSE when only GeoTIFF output is needed.
 write_png <- TRUE
 
@@ -230,13 +230,13 @@ for (product_file in product_files) {
   )
 }
 
-# Optional: inspect one output ---------------------------------------------
+# Optional: inspect one output -------------------------------------
 # example <- read_jaxa_product(product_files[[1L]])
 # print(example$header)
 # print(example$values[1:5, 1:5])
 # plot(make_jaxa_raster(example$values))
 
-# Notes --------------------------------------------------------------------
+# Notes ------------------------------------------------------------
 # * For GLI SWR, use the product-specific scale (often 0.02) rather than 0.01.
 # * For PAR, use its documented scale and units rather than assuming SWR units.
 # * Add country outlines only after transforming vectors to EPSG:4326:

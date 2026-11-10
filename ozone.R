@@ -1,4 +1,4 @@
-# Parallel annual ozone extraction to 2021 English LSOAs ----------------------
+# Parallel annual ozone extraction to 2021 English LSOAs -----------------------
 #
 # Purpose:
 #   Read annual DEFRA PCM ozone CSV grids, calculate LSOA-level mean exposure,
@@ -33,7 +33,7 @@
 #   Review any remaining missing values in `ozone_extraction_summary.csv` before
 #   analysis. Centroid fallback values are not area-weighted estimates.
 
-# Packages ------------------------------------------------------------------
+# Packages ---------------------------------------------------------
 required_packages <- c("sf", "terra", "here", "future", "parallelly", "ggplot2", "readr")
 missing_packages <- required_packages[!vapply(
   required_packages, requireNamespace, logical(1), quietly = TRUE
@@ -41,7 +41,7 @@ missing_packages <- required_packages[!vapply(
 if (length(missing_packages) > 0L) install.packages(missing_packages)
 invisible(lapply(required_packages, library, character.only = TRUE))
 
-# Parallel configuration ----------------------------------------------------
+# Parallel configuration -------------------------------------------
 # `multisession` uses independent R sessions and is generally safer than
 # multicore processing for sf/GEOS/GDAL/terra workflows and on HPC systems.
 options(
@@ -60,7 +60,7 @@ future::plan(
 on.exit(future::plan(future::sequential), add = TRUE)
 message("Workers used by this R session: ", n_workers)
 
-# Paths and annual source files --------------------------------------------
+# Paths and annual source files ------------------------------------
 # `lsoa11221.R` must create `poly_lsoa_21`, an sf object of 2021 English LSOA
 # polygons with an `LSOA21CD` field.
 source(here::here("lsoa11221.R"))
@@ -94,7 +94,7 @@ ozone_files$path <- file.path(data_dir, ozone_files$file)
 
 if (!dir.exists(data_dir)) stop("Ozone input directory not found: ", data_dir, call. = FALSE)
 
-# Validate and prepare LSOA geometry ---------------------------------------
+# Validate and prepare LSOA geometry -------------------------------
 if (!exists("poly_lsoa_21") || !inherits(poly_lsoa_21, "sf")) {
   stop("`lsoa11221.R` must create `poly_lsoa_21` as an sf object.", call. = FALSE)
 }
@@ -111,7 +111,7 @@ if (any(invalid)) {
   poly_lsoa_21 <- sf::st_make_valid(poly_lsoa_21)
 }
 
-# Helpers -------------------------------------------------------------------
+# Helpers ----------------------------------------------------------
 read_ozone_csv_as_raster <- function(path, cell_resolution_metres = 1000) {
   # PCM CSV files have five metadata rows. The first apparent data row can be
   # a header-like record, so parse numbers and retain valid coordinates only.
@@ -198,7 +198,7 @@ save_ozone_plot <- function(lsoa_sf, value_column, year, output_file) {
   ggplot2::ggsave(output_file, map, width = 8, height = 10, dpi = 300)
 }
 
-# Submit a job for each available year -------------------------------------
+# Submit a job for each available year -----------------------------
 # Missing files return an error record rather than stopping all other years.
 jobs <- lapply(seq_len(nrow(ozone_files)), function(index) {
   future::future(
@@ -211,7 +211,7 @@ jobs <- lapply(seq_len(nrow(ozone_files)), function(index) {
   )
 })
 
-# Collect outputs as each task completes -----------------------------------
+# Collect outputs as each task completes ---------------------------
 completed <- rep(FALSE, length(jobs))
 results <- vector("list", length(jobs))
 
@@ -247,7 +247,7 @@ while (!all(completed)) {
   Sys.sleep(1)
 }
 
-# Completion report ---------------------------------------------------------
+# Completion report ------------------------------------------------
 summary_df <- data.frame(
   year = vapply(results, `[[`, integer(1), "year"),
   ok = vapply(results, `[[`, logical(1), "ok"),
