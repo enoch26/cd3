@@ -21,7 +21,6 @@ This repository contains an R data pipeline for preparing environmental and cont
 ├── pop.R                        # Harmonises ONS population 2002–2024 to LSOA 2021
 ├── read_defra_pollutant.R       # Standalone: converts DEFRA PCM CSVs to GeoTIFFs (per pollutant)
 ├── air_extract.R                # Extracts area-weighted means from DEFRA rasters to LSOA 2021
-├── ozone.R                      # Processes ozone PCM CSVs to LSOA-level values
 ├── fingertips.R                 # Downloads APS smoking from OHID Fingertips and joins to LSOA 2021
 ├── read_jaxa.R                  # Reads JAXA binary grids and exports GeoTIFFs/PNGs
 ├── functions/                   # Reusable R modules (source these to use in your scripts)
@@ -58,13 +57,10 @@ This repository contains an R data pipeline for preparing environmental and cont
 4. **`air_extract.R`** — Depends on `lsoa11221.R` and DEFRA raster outputs.
    - Outputs: `outputs/air_lsoa_eng.gpkg`
 
-5. **`ozone.R`** — Independent workflow; doesn't depend on earlier scripts.
-   - Outputs: `outputs/ozone_lsoa_yearly/`
-
-6. **`fingertips.R`** — Downloads from the OHID Fingertips API; independent of spatial workflows.
+5. **`fingertips.R`** — Downloads from the OHID Fingertips API; independent of spatial workflows.
    - Outputs: `data/derived/lsoa2021_smoking_aps_{long,wide}.csv`
 
-7. **`read_jaxa.R`** — Independent; no dependencies on LSOA workflows.
+6. **`read_jaxa.R`** — Independent; no dependencies on LSOA workflows.
    - Outputs: `outputs/swr/`
 
 ### Using Function Modules
@@ -119,7 +115,6 @@ After running any workflow, check for:
 
 - **LAD-to-LSOA allocation:** Fingertips assigns one LAD-level value to all constituent LSOAs; use only where LSOA-level variation is not critical.
 - **Area-weighted transfers:** Population and other counts are transferred under a uniform-within-source-area assumption; do not apply to rates or densities without recalculating.
-- **Ozone point fallback:** `ozone.R` may fall back to point extraction if polygon extraction is unavailable; record this in your outputs.
 - **No independent small-area estimation:** These are contextual/exposure variables derived from higher-level data, not independently estimated LSOA-level measurements.
 
 ## Required R Packages
@@ -128,7 +123,6 @@ Common packages across workflows: `sf`, `terra`, `here`, `dplyr`, `data.table`, 
 
 Workflow-specific:
 - `fingertipsR` — Required for the Fingertips workflow.
-- `exactextractr` — Required for ozone exact extraction.
 
 Install missing packages before running scripts:
 
@@ -162,6 +156,12 @@ python functions/join_ndvi_adm3.py --help
 - **Outputs:** Record metadata alongside results (coordinate systems, units, methods, years covered).
 - **Area weights:** If modifying the area-weight calculation, validate against official sources and compare weight distributions.
 - **Git commits:** Include data versions and processing parameters in commit messages where they affect reproducibility.
+- **README.md updates:** Whenever you add, remove, or significantly modify a script or workflow, update the corresponding sections in [README.md](README.md):
+  - Update the repository layout tree (list of `.R` files)
+  - Update the script guide table with any new/removed scripts and their purposes
+  - Update the execution order and inputs/outputs sections
+  - Update the Requirements section if package dependencies change
+  - Remove or update any references to deleted scripts throughout the file
 
 ## External Data Sources
 
