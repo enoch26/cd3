@@ -10,7 +10,7 @@ The NDVI maps below are retained as example figures showing normalized differenc
 
 ### Animated NDVI Time Series (2003–2020)
 
-<figure style="width: 70%; max-width: 800px; margin: 20px auto;">
+<figure style="width: 50%; max-width: 800px; margin: 20px auto;">
   <img src="figure/ndvi_animation.gif" alt="Animated NDVI maps showing vegetation change from 2003 to 2020" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
   <figcaption><strong>Animation:</strong> Normalized Difference Vegetation Index (NDVI) aggregated to LSOA boundaries, 2003–2020. Loop duration: 1 second per frame.</figcaption>
 </figure>
@@ -18,9 +18,16 @@ The NDVI maps below are retained as example figures showing normalized differenc
 ### LSOA Aggregation Workflow
 
 <figure style="width: 100%; margin: 20px 0;">
-  <img src="figure/lsoa_aggregation_workflow.png" alt="Five-panel diagram explaining the LSOA aggregation process and 2011-2021 projection" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
-  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow from raster to 2021 LSOA boundaries. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA boundary misalignment: blue solid lines show 2011 boundaries; red dashed lines show 2021 boundaries. Where source data uses 2011 boundaries, <code>lsoa11221.R</code> or <a href="lsoa11221.py"><code>lsoa11221.py</code></a> computes area-weighted crosswalks to project onto 2021 boundaries. (Panel 3) Target LSOA 2021 administrative boundaries (33,755 areas in England). (Panel 4) Aggregation process with raster cell values overlaid on LSOA polygons. (Panel 5) Final area-weighted aggregated values, one per LSOA on 2021 boundaries. Raster cells are weighted by their intersection area with each LSOA polygon. This workflow figure was generated using Python (<code>matplotlib</code>, <code>geopandas</code>); a similar visualization can be reproduced by adapting the boundary-loading and aggregation logic from <a href="lsoa11221.py"><code>lsoa11221.py</code></a> and <a href="air_extract.py"><code>air_extract.py</code></a>.</figcaption>
+  <img src="figure/lsoa_aggregation_workflow.png" alt="Five-panel diagram showing direct raster-to-2021-LSOA aggregation and separate 2011-2021 projection workflow" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
+  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow. <strong>Main workflow (Panels 1–4):</strong> Continuous raster data (NDVI, temperature, air pollution) is aggregated directly to 2021 LSOA boundaries without intermediate projection. (Panel 1) Raw raster grid. (Panel 2) Target 2021 LSOA boundaries (33,755 areas in England). (Panel 3) Overlay of raster cells on LSOA polygons. (Panel 4) Final aggregated values computed as area-weighted means of raster cells within each LSOA, ready for analysis. <strong>Alternative workflow (Panel 5):</strong> For legacy data already on 2011 LSOA boundaries, <code>lsoa11221.R</code> or <a href="lsoa11221.py"><code>lsoa11221.py</code></a> computes area-weighted crosswalks to project onto 2021 boundaries; shown here because 2011 and 2021 boundaries misalign (one 2011 LSOA may split into multiple 2021 LSOAs). This workflow figure was generated using Python (<code>matplotlib</code>, <code>geopandas</code>); a similar visualization can be reproduced by adapting the boundary-loading and aggregation logic from <a href="lsoa11221.py"><code>lsoa11221.py</code></a> and <a href="air_extract.py"><code>air_extract.py</code></a>.</figcaption>
 </figure>
+
+**Aggregation methodology:** The main workflow applies area-weighted aggregation directly to raster data:
+- For each LSOA polygon, compute the weighted mean of all raster cells that intersect it
+- Weight each cell by its intersection area with the LSOA
+- This approach assumes uniform within-LSOA distribution and is appropriate for continuous measures like NDVI, temperature, and air quality indices
+
+**Legacy data projection:** When data are pre-aggregated to 2011 LSOA boundaries (e.g., historical population counts), use the separate projection workflow shown in Panel 5. LSOA boundaries changed between 2011 and 2021 censuses; one 2011 LSOA may now be split into multiple 2021 LSOAs. The crosswalk matrices computed by <a href="lsoa11221.py"><code>lsoa11221.py</code></a> allocate 2011 data proportionally by intersection area, ensuring historical datasets are harmonized to current boundaries.
 
 ## Repository layout
 
