@@ -2,6 +2,8 @@
 
 This repository contains scripts and reusable helpers for preparing environmental and contextual datasets for English 2021 Lower-layer Super Output Areas (LSOAs). Workflows cover geographic crosswalks, population estimates, DEFRA air pollution, OHID Fingertips indicators, and a JAXA binary-grid reader.
 
+This project is part of the [CD3 Programme](https://www.cd3.org.uk/), which aims to map cancer disease risk to environmental exposures.
+
 Several inputs are not measured on 2021 LSOA boundaries. Historical population counts are allocated using geographic area weights, and Fingertips LAD-level values are assigned to each LSOA in that LAD. These are derived or contextual values, not independently estimated small-area measurements.
 
 The NDVI maps below are retained as example figures. The repository does not currently include a workflow to produce them; the Python helper joins an existing NDVI summary table to administrative polygons.
@@ -51,6 +53,8 @@ See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for det
 
 ## Script guide
 
+### R scripts
+
 | Script | Purpose | Main outputs |
 |---|---|---|
 | [`lsoa11221.R`](lsoa11221.R) | Reads England LSOA 2001, 2011, and 2021 boundaries and lookup files; creates spatial objects and area-weighted crosswalks. | `data/derived/lsoa_*_area_weights.csv` |
@@ -61,9 +65,22 @@ See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for det
 | [`read_jaxa.R`](read_jaxa.R) | Reads configured JAXA MODIS/SeaWiFS SWR binary grids and writes GeoTIFFs and optional PNGs. | `outputs/swr/` |
 | [`functions/`](functions/) | Reusable R modules and the NDVI administrative-boundary join utility. See [`functions/README.md`](functions/README.md). | Depends on the selected helper |
 
-The stand-alone `read_defra_pollutant.R` script and reusable `functions/read_defra_functions.R` module cover the same broad DEFRA conversion task. Use the script for its fixed, editable configuration, or source the module to call its functions from another R workflow.
+### Python equivalents
+
+| Script | Purpose | Main outputs |
+|---|---|---|
+| [`lsoa11221.py`](lsoa11221.py) | Python equivalent: Reads England LSOA 2001, 2011, and 2021 boundaries and lookup files; creates area-weighted crosswalks using geopandas. | `data/derived/lsoa_*_area_weights.csv` |
+| [`pop.py`](pop.py) | Python equivalent: Harmonises annual population estimates for 2002–2024 to LSOA 2021. Applies area weights from 2011 to 2021 for historical years. | `data/pop_regrouped_2002_2024.csv` |
+| [`read_defra_pollutant.py`](read_defra_pollutant.py) | Python equivalent: Converts annual DEFRA PCM CSVs to GeoTIFFs using rasterio, aligns rasters to common overlap, and optionally extracts to LSOAs. | `data/defra/<pollutant>/{geotiff,geotiff_overlap}/` |
+| [`air_extract.py`](air_extract.py) | Python equivalent: Extracts area-weighted means for benzene, PM2.5, PM10, and NOx from overlap rasters to LSOA 2021 GeoDataFrame, saves as GeoPackage. | `outputs/air_lsoa_eng.gpkg` |
+| [`fingertips.py`](fingertips.py) | Python equivalent: Retrieves APS adult smoking prevalence from OHID Fingertips and joins to LSOA 2021 areas. Includes pragmatic adjustments and imputations. | `data/derived/lsoa2021_smoking_aps_{long,wide}.csv` |
+| [`read_jaxa.py`](read_jaxa.py) | Python equivalent: Reads JAXA MODIS/SeaWiFS SWR binary grids using NumPy, converts to physical units, and writes GeoTIFFs with optional PNG visualization. | `outputs/swr/` |
+
+The stand-alone `read_defra_pollutant.R` script and reusable `functions/read_defra_functions.R` module cover the same broad DEFRA conversion task. Use the script for its fixed, editable configuration, or source the module to call its functions from another R workflow. Python equivalents are provided as standalone scripts with comparable functionality.
 
 ## Inputs and execution order
+
+### R workflow
 
 1. Download the required LSOA boundary shapefiles and lookup CSVs into `data/lsoa/`. Filenames are configured near the top of `lsoa11221.R`.
 2. Download ONS single-year-of-age population workbooks into `data/lsoa_pop_est_sing/`.
@@ -71,9 +88,23 @@ The stand-alone `read_defra_pollutant.R` script and reusable `functions/read_def
 4. Run `pop.R` to generate the harmonised population CSV.
 5. Download annual DEFRA PCM CSVs from [UK-AIR](https://uk-air.defra.gov.uk/data/pcm-data) into pollutant folders under `data/defra/`. Configure and run `read_defra_pollutant.R` for each of `benzene`, `pm25`, `pm10`, and `nox`.
 6. Run `air_extract.R` after all required pollutant-year overlap rasters are available. It expects 2003–2024 rasters for all four pollutants.
-8. Put the LSOA 2011-to-LSOA 2021-to-LAD 2022 exact-fit lookup in `data/lsoa/`, then run `fingertips.R`. It retrieves indicator data from [OHID Fingertips](https://fingertips.phe.org.uk/).
+7. Put the LSOA 2011-to-LSOA 2021-to-LAD 2022 exact-fit lookup in `data/lsoa/`, then run `fingertips.R`. It retrieves indicator data from [OHID Fingertips](https://fingertips.phe.org.uk/).
 
 `read_jaxa.R` is independent of the LSOA workflows. Verify its product-specific binary layout, scale, byte order, and missing-value settings before using it.
+
+### Python workflow
+
+Equivalent Python scripts follow the same order and dependencies:
+
+1. Prepare data as above.
+2. Run `lsoa11221.py` to generate area-weight crosswalks.
+3. Run `pop.py` to harmonise population data to LSOA 2021.
+4. Run `read_defra_pollutant.py` for each pollutant to convert CSVs to GeoTIFFs and align rasters.
+5. Run `air_extract.py` to extract pollutant concentrations to LSOA 2021 GeoPackage.
+6. Run `fingertips.py` to retrieve and join smoking prevalence data.
+7. Run `read_jaxa.py` independently to process JAXA binary grids.
+
+Run Python scripts from the repository root using `python lsoa11221.py` etc.
 
 Useful source datasets:
 
@@ -84,7 +115,28 @@ Useful source datasets:
 
 ## Requirements
 
+### R environment
+
 R packages vary by workflow. Common packages include `sf`, `terra`, `here`, `dplyr`, `data.table`, `readr`, `readxl`, `tidyr`, `purrr`, `stringr`, `tibble`, `future`, `parallelly`, and `ggplot2`; `fingertipsR` is required for the Fingertips workflow. Install the packages needed by the scripts you plan to run. Spatial R packages may also require GDAL, GEOS, PROJ, and UDUNITS system libraries.
+
+### Python environment
+
+Python equivalents require the following packages:
+
+```bash
+python -m pip install geopandas pandas numpy rasterio rioxarray matplotlib requests
+```
+
+Core dependencies:
+- **geopandas**: Spatial data processing (LSOA boundaries, joins)
+- **pandas**: Tabular data manipulation
+- **numpy**: Numerical operations and array handling
+- **rasterio**: GeoTIFF and raster file I/O
+- **rioxarray**: Optional, for advanced raster operations
+- **matplotlib**: PNG visualization and diagnostic plots
+- **requests**: HTTP API access (Fingertips data retrieval)
+
+System libraries required: GDAL, GEOS, PROJ (similar to R requirements).
 
 The NDVI join utility requires Python with `geopandas` and `pandas`:
 
