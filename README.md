@@ -27,9 +27,9 @@ The NDVI maps below are retained as example figures. The repository does not cur
 ├── air_extract.R
 ├── fingertips.R
 ├── lsoa11221.R
-├── ozone.R
 ├── pop.R
 ├── read_defra_pollutant.R
+├── read_defra_pollutant_backup.R
 ├── read_jaxa.R
 ├── functions/
 │   ├── README.md

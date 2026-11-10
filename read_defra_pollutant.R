@@ -1,12 +1,16 @@
-# DEFRA PCM annual CSV grids -> aligned GeoTIFFs and diagnostic maps -----------
+# DEFRA PCM workflows: GeoTIFFs, aligned grids, and LSOA extraction ---------
 #
 # Purpose:
 #   Convert annual DEFRA PCM model-output CSV files (annual mean concentrations
-#   in micrograms per cubic metre) into British National Grid GeoTIFFs. The
-#   script also crops all annual grids to their common spatial overlap so that
-#   they can be compared cell by cell.
+#   in micrograms per cubic metre) into:
+#   1. British National Grid GeoTIFFs, aligned, and diagnostic maps (all workflows)
+#   2. Area-weighted LSOA 2021 exposure values (optional extraction workflow)
 #
-# Source:
+#   All outputs use 1 km grids in EPSG:27700 (British National Grid). The script
+#   can process any pollutant independently or perform parallel extraction of
+#   ozone (or other pollutants) to LSOA boundaries.
+#
+# Sources:
 #   https://uk-air.defra.gov.uk/data/pcm-data
 #
 # Expected layout for a selected pollutant:
@@ -15,6 +19,7 @@
 #     geotiff/                  # created: original-extent rasters
 #     geotiff_overlap/          # created: common-overlap rasters
 #     plots/                    # created: diagnostic PNG files
+#     lsoa_yearly/              # created if do_lsoa_extraction = TRUE
 #
 # Assumptions to verify against the downloaded PCM release:
 #   * the first five CSV rows are metadata;
@@ -22,29 +27,59 @@
 #   * coordinate fields are named `x` and `y`, in EPSG:27700 metres;
 #   * the concentration field is the fourth data column; and
 #   * cells are on a 1 km grid.
+#
+# Optional LSOA Extraction Features (when do_lsoa_extraction = TRUE):
+#   * Requires `lsoa11221.R` to create `poly_lsoa_21`
+#   * Uses parallel processing (multisession) for performance
+#   * Applies area-weighted mean extraction with fallback strategies:
+#     - Primary: exact cell-coverage-weighted polygon mean
+#     - Secondary: ordinary polygon mean
+#     - Tertiary: LSOA centroid value
 
 # Packages ---------------------------------------------------------
-required_packages <- c("terra", "dplyr", "readr", "stringr", "here")
+required_packages <- c("terra", "dplyr", "readr", "stringr", "here", "sf")
+optional_packages <- c("future", "parallelly", "ggplot2")
+
 missing_packages <- required_packages[!vapply(
   required_packages, requireNamespace, logical(1), quietly = TRUE
 )]
 if (length(missing_packages) > 0L) install.packages(missing_packages)
 invisible(lapply(required_packages, library, character.only = TRUE))
 
+# Only load optional packages if LSOA extraction is enabled (see configuration section)
+
 # Configuration ----------------------------------------------------
-# Run once per pollutant, e.g. "benzene", "pm25", "pm10", or "nox".
+# Select a pollutant: "benzene", "pm25", "pm10", "nox", "ozone", or any
+# subdirectory name in data/defra/
 pollutant <- "pm25"
+
+# Set to TRUE to enable extraction to LSOA 2021 boundaries and parallel processing.
+# When FALSE, only GeoTIFF creation and diagnostic maps are produced.
+do_lsoa_extraction <- FALSE
+
+# Parallel processing configuration (used only when do_lsoa_extraction = TRUE)
+maximum_workers <- 4L
+
+# Paths and output directories
 input_dir <- here::here("data", "defra", pollutant)
 raw_tif_dir <- file.path(input_dir, "geotiff")
 overlap_tif_dir <- file.path(input_dir, "geotiff_overlap")
 plot_dir <- file.path(input_dir, "plots")
 
+# LSOA extraction directories (created only if do_lsoa_extraction = TRUE)
+lsoa_output_dir <- file.path(input_dir, "lsoa_yearly")
+lsoa_plot_dir <- file.path(lsoa_output_dir, "png")
+lsoa_rds_dir <- file.path(lsoa_output_dir, "rds")
+lsoa_summary_file <- file.path(lsoa_output_dir, paste0(pollutant, "_extraction_summary.csv"))
+
+# Raster and grid configuration
 metadata_rows <- 5L
 metric_column_index <- 4L
 cell_resolution_metres <- 1000
 input_crs <- "EPSG:27700"
 number_of_plot_columns <- 4L
 
+# Validation and setup
 if (!dir.exists(input_dir)) {
   stop("Input directory does not exist: ", input_dir, call. = FALSE)
 }
@@ -57,6 +92,55 @@ csv_files <- list.files(
 )
 if (length(csv_files) == 0L) {
   stop("No CSV files found in: ", input_dir, call. = FALSE)
+}
+
+# Set up LSOA extraction if requested
+if (do_lsoa_extraction) {
+  # Check and load optional packages
+  optional_missing <- optional_packages[!vapply(
+    optional_packages, requireNamespace, logical(1), quietly = TRUE
+  )]
+  if (length(optional_missing) > 0L) install.packages(optional_missing)
+  invisible(lapply(optional_packages, library, character.only = TRUE))
+  
+  dir.create(lsoa_output_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(lsoa_plot_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(lsoa_rds_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  # Load LSOA geometry
+  source(here::here("lsoa11221.R"))
+  
+  if (!exists("poly_lsoa_21") || !inherits(poly_lsoa_21, "sf")) {
+    stop("`lsoa11221.R` must create `poly_lsoa_21` as an sf object.", call. = FALSE)
+  }
+  if (!"LSOA21CD" %in% names(poly_lsoa_21)) {
+    stop("`poly_lsoa_21` must contain an `LSOA21CD` column.", call. = FALSE)
+  }
+  if (is.na(sf::st_crs(poly_lsoa_21))) stop("`poly_lsoa_21` has no CRS.", call. = FALSE)
+  
+  # Ensure LSOA geometry is in British National Grid
+  poly_lsoa_21 <- sf::st_transform(poly_lsoa_21, 27700)
+  invalid <- !sf::st_is_valid(poly_lsoa_21)
+  if (any(invalid)) {
+    message("Repairing ", sum(invalid), " invalid LSOA polygon(s) ...")
+    poly_lsoa_21 <- sf::st_make_valid(poly_lsoa_21)
+  }
+  
+  # Set up parallel processing
+  options(
+    parallelly.availableCores.methods = c(
+      "cgroups.cpuset", "nproc", "/proc/self/status", "system"
+    ),
+    future.globals.maxSize = 8 * 1024^3
+  )
+  
+  n_workers <- min(maximum_workers, parallelly::availableCores())
+  future::plan(
+    if (n_workers > 1L) future::multisession else future::sequential,
+    workers = if (n_workers > 1L) n_workers else NULL
+  )
+  on.exit(future::plan(future::sequential), add = TRUE)
+  message("Parallel workers available: ", n_workers)
 }
 
 # Helpers ----------------------------------------------------------
@@ -175,6 +259,58 @@ plot_multipanel <- function(rasters, years, filename, title_suffix = "", log10_s
   graphics::mtext(title_suffix, side = 3, outer = TRUE, line = -1)
 }
 
+# Extract LSOA-level exposure values from a raster (only if do_lsoa_extraction = TRUE)
+extract_to_lsoa <- function(year, path, lsoa_sf) {
+  # All terra objects are made inside the worker rather than passed between
+  # processes. This is safer on network filesystems and HPC installations.
+  tryCatch({
+    if (!file.exists(path)) stop("Input file not found: ", path, call. = FALSE)
+    message("Reading ", pollutant, " grid for ", year, ": ", basename(path))
+    
+    raster <- read_pcm_raster(path)$raster
+    lsoa_vect <- terra::vect(lsoa_sf)
+    
+    # `exact = TRUE` calculates coverage fractions for intersected grid cells.
+    values <- terra::extract(
+      raster, lsoa_vect, fun = mean, na.rm = TRUE, ID = FALSE, exact = TRUE
+    )[[1L]]
+    
+    # Some small/coastal polygons may not overlap a valid raster cell. First
+    # retry with terra's ordinary polygon extraction, then use centroid values.
+    missing_after_exact <- is.na(values)
+    if (any(missing_after_exact)) {
+      values[missing_after_exact] <- terra::extract(
+        raster, lsoa_vect[missing_after_exact], fun = mean, na.rm = TRUE, ID = FALSE
+      )[[1L]]
+    }
+    
+    missing_after_polygon <- is.na(values)
+    if (any(missing_after_polygon)) {
+      centroids <- sf::st_point_on_surface(lsoa_sf[missing_after_polygon, ])
+      values[missing_after_polygon] <- terra::extract(
+        raster, terra::vect(centroids), ID = FALSE
+      )[[1L]]
+    }
+    
+    list(ok = TRUE, year = year, values = values, n_na = sum(is.na(values)), error = NA_character_)
+  }, error = function(error) {
+    list(ok = FALSE, year = year, values = NULL, n_na = NA_integer_, error = conditionMessage(error))
+  })
+}
+
+save_lsoa_plot <- function(lsoa_sf, value_column, year, output_file) {
+  map <- ggplot2::ggplot(lsoa_sf) +
+    ggplot2::geom_sf(ggplot2::aes(fill = .data[[value_column]]), colour = NA) +
+    ggplot2::scale_fill_viridis_c(option = "C", na.value = "grey85", name = pollutant) +
+    ggplot2::labs(title = paste("LSOA", pollutant, "exposure", year), subtitle = value_column) +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(face = "bold"),
+      legend.position = "right"
+    )
+  ggplot2::ggsave(output_file, map, width = 8, height = 10, dpi = 300)
+}
+
 # Read, write and align rasters ------------------------------------
 products <- lapply(csv_files, read_pcm_raster)
 years <- vapply(products, `[[`, integer(1), "year")
@@ -253,3 +389,73 @@ grDevices::dev.off()
 message("Wrote raw GeoTIFFs to: ", raw_tif_dir)
 message("Wrote aligned GeoTIFFs to: ", overlap_tif_dir)
 message("Wrote diagnostic maps to: ", plot_dir)
+
+# LSOA extraction workflow (optional) --------------------------------
+if (do_lsoa_extraction) {
+  message("\nStarting parallel LSOA extraction ...")
+  
+  # Submit a parallel job for each year
+  jobs <- lapply(seq_along(csv_files), function(index) {
+    future::future(
+      extract_to_lsoa(
+        year = years[index],
+        path = csv_files[index],
+        lsoa_sf = poly_lsoa_21
+      ),
+      seed = TRUE
+    )
+  })
+  
+  # Collect outputs as each task completes
+  completed <- rep(FALSE, length(jobs))
+  results <- vector("list", length(jobs))
+  
+  while (!all(completed)) {
+    for (index in seq_along(jobs)) {
+      if (completed[index] || !future::resolved(jobs[[index]])) next
+      
+      result <- future::value(jobs[[index]])
+      completed[index] <- TRUE
+      results[[index]] <- result
+      
+      if (!isTRUE(result$ok)) {
+        message("Year ", result$year, " failed: ", result$error)
+        next
+      }
+      
+      value_column <- paste0(pollutant, result$year)
+      yearly_lsoa <- poly_lsoa_21
+      yearly_lsoa[[value_column]] <- result$values
+      
+      gpkg_file <- file.path(lsoa_output_dir, paste0(pollutant, "_lsoa_eng_", result$year, ".gpkg"))
+      png_file <- file.path(lsoa_plot_dir, paste0(pollutant, "_lsoa_eng_", result$year, ".png"))
+      rds_file <- file.path(lsoa_rds_dir, paste0(pollutant, "_lsoa_eng_", result$year, ".rds"))
+      
+      message("Completed ", value_column, "; remaining missing values: ", result$n_na)
+      sf::st_write(yearly_lsoa, gpkg_file, delete_dsn = TRUE, quiet = TRUE)
+      save_lsoa_plot(yearly_lsoa, value_column, result$year, png_file)
+      saveRDS(yearly_lsoa, rds_file)
+      
+      rm(yearly_lsoa)
+      invisible(gc())
+    }
+    Sys.sleep(1)
+  }
+  
+  # Write LSOA extraction summary
+  summary_df <- data.frame(
+    year = vapply(results, `[[`, integer(1), "year"),
+    ok = vapply(results, `[[`, logical(1), "ok"),
+    n_missing = vapply(results, `[[`, integer(1), "n_na"),
+    error = vapply(results, `[[`, character(1), "error")
+  )
+  summary_df <- summary_df[order(summary_df$year), ]
+  readr::write_csv(summary_df, lsoa_summary_file)
+  print(summary_df)
+  
+  message("\nLSOA Extraction Complete")
+  message("GeoPackages: ", lsoa_output_dir)
+  message("PNG maps: ", lsoa_plot_dir)
+  message("RDS checkpoints: ", lsoa_rds_dir)
+  message("Summary: ", lsoa_summary_file)
+}
