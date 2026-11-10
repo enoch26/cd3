@@ -1,6 +1,6 @@
 # LSOA 2021 Exposure Data Pipeline
 
-This repository contains scripts and reusable helpers for preparing environmental and contextual datasets for English 2021 Lower-layer Super Output Areas (LSOAs). Workflows cover geographic crosswalks, population estimates, DEFRA air pollution, ozone, OHID Fingertips indicators, and a JAXA binary-grid reader.
+This repository contains scripts and reusable helpers for preparing environmental and contextual datasets for English 2021 Lower-layer Super Output Areas (LSOAs). Workflows cover geographic crosswalks, population estimates, DEFRA air pollution, OHID Fingertips indicators, and a JAXA binary-grid reader.
 
 Several inputs are not measured on 2021 LSOA boundaries. Historical population counts are allocated using geographic area weights, and Fingertips LAD-level values are assigned to each LSOA in that LAD. These are derived or contextual values, not independently estimated small-area measurements.
 
@@ -57,7 +57,6 @@ See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for det
 | [`pop.R`](pop.R) | Harmonises annual population estimates for 2002–2024 to LSOA 2021. Historical counts for 2002–2010 are area-weighted from LSOA 2011. | `data/pop_regrouped_2002_2024.csv` |
 | [`read_defra_pollutant.R`](read_defra_pollutant.R) | Converts annual DEFRA PCM CSVs for the configured pollutant to GeoTIFFs, aligns their common overlap, and writes diagnostic maps. Configure `pollutant` in the script and run once per pollutant. | `data/defra/<pollutant>/{geotiff,geotiff_overlap,plots}/` |
 | [`air_extract.R`](air_extract.R) | Extracts area-weighted means for benzene, PM2.5, PM10, and NOx from overlap rasters to LSOA 2021 boundaries. | `outputs/air_lsoa_eng.gpkg` |
-| [`ozone.R`](ozone.R) | Processes annual ozone PCM CSVs and extracts LSOA-level values, with exact, polygon, and point fallbacks. | `outputs/ozone_lsoa_yearly/` |
 | [`fingertips.R`](fingertips.R) | Retrieves APS adult smoking prevalence from OHID Fingertips at LAD level and joins it to LSOA 2021 areas. | `data/derived/lsoa2021_smoking_aps_{long,wide}.csv` |
 | [`read_jaxa.R`](read_jaxa.R) | Reads configured JAXA MODIS/SeaWiFS SWR binary grids and writes GeoTIFFs and optional PNGs. | `outputs/swr/` |
 | [`functions/`](functions/) | Reusable R modules and the NDVI administrative-boundary join utility. See [`functions/README.md`](functions/README.md). | Depends on the selected helper |
@@ -72,7 +71,6 @@ The stand-alone `read_defra_pollutant.R` script and reusable `functions/read_def
 4. Run `pop.R` to generate the harmonised population CSV.
 5. Download annual DEFRA PCM CSVs from [UK-AIR](https://uk-air.defra.gov.uk/data/pcm-data) into pollutant folders under `data/defra/`. Configure and run `read_defra_pollutant.R` for each of `benzene`, `pm25`, `pm10`, and `nox`.
 6. Run `air_extract.R` after all required pollutant-year overlap rasters are available. It expects 2003–2024 rasters for all four pollutants.
-7. Put ozone PCM CSVs in `data/defra/ozone/`, then run `ozone.R`.
 8. Put the LSOA 2011-to-LSOA 2021-to-LAD 2022 exact-fit lookup in `data/lsoa/`, then run `fingertips.R`. It retrieves indicator data from [OHID Fingertips](https://fingertips.phe.org.uk/).
 
 `read_jaxa.R` is independent of the LSOA workflows. Verify its product-specific binary layout, scale, byte order, and missing-value settings before using it.
@@ -86,7 +84,7 @@ Useful source datasets:
 
 ## Requirements
 
-R packages vary by workflow. Common packages include `sf`, `terra`, `here`, `dplyr`, `data.table`, `readr`, `readxl`, `tidyr`, `purrr`, `stringr`, `tibble`, `future`, `parallelly`, and `ggplot2`; `exactextractr` is needed for exact ozone extraction, and `fingertipsR` is required for the Fingertips workflow. Install the packages needed by the scripts you plan to run. Spatial R packages may also require GDAL, GEOS, PROJ, and UDUNITS system libraries.
+R packages vary by workflow. Common packages include `sf`, `terra`, `here`, `dplyr`, `data.table`, `readr`, `readxl`, `tidyr`, `purrr`, `stringr`, `tibble`, `future`, `parallelly`, and `ggplot2`; `fingertipsR` is required for the Fingertips workflow. Install the packages needed by the scripts you plan to run. Spatial R packages may also require GDAL, GEOS, PROJ, and UDUNITS system libraries.
 
 The NDVI join utility requires Python with `geopandas` and `pandas`:
 
@@ -99,7 +97,6 @@ python functions/join_ndvi_adm3.py --help
 
 - Area weights transfer additive counts under a uniform-within-source-area assumption. Do not apply them directly to rates, percentages, or means; transfer numerators and denominators separately where possible.
 - `fingertips.R` assigns one LAD-level APS value to all constituent LSOAs. It also uses documented pragmatic replacements and imputations; review these before analysis.
-- `ozone.R` records fallback behavior in its summary. Point-fallback values are not area-weighted estimates.
 - Check source release versions, units, coordinate systems, years, missing values, crosswalk weight sums, duplicate LSOA-year rows, and output coverage before using results.
 - Record download dates, source metadata, and any allocation or imputation rules alongside derived data.
 
