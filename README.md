@@ -6,9 +6,32 @@ This project is part of the [CD3 Programme](https://www.cd3.org.uk/), which aims
 
 Several inputs are not measured on 2021 LSOA boundaries. Historical population counts are allocated using geographic area weights, and Fingertips LAD-level values are assigned to each LSOA in that LAD. These are derived or contextual values, not independently estimated small-area measurements.
 
-The NDVI maps below are retained as example figures. The repository does not currently include a workflow to produce them; the Python helper joins an existing NDVI summary table to administrative polygons.
+The NDVI maps below are retained as example figures showing normalized difference vegetation index (NDVI) aggregated to LSOA boundaries. The repository does not currently include a workflow to produce them; the Python helper joins an existing NDVI summary table to administrative polygons.
 
-<figure style="width: 50%; max-width: 700px; margin: 0;">
+### Animated NDVI Time Series (2003–2020)
+
+<figure style="width: 70%; max-width: 800px; margin: 20px auto;">
+  <img src="figure/ndvi_animation.gif" alt="Animated NDVI maps showing vegetation change from 2003 to 2020" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
+  <figcaption><strong>Animation:</strong> Normalized Difference Vegetation Index (NDVI) aggregated to LSOA boundaries, 2003–2020. Loop duration: 1 second per frame.</figcaption>
+</figure>
+
+### NDVI Raster and LSOA Aggregation Comparison
+
+<figure style="width: 100%; margin: 20px 0;">
+  <img src="figure/ndvi_aggregation_comparison.png" alt="Side-by-side comparison of raw raster NDVI data and LSOA-aggregated values" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
+  <figcaption><strong>Figure 1:</strong> NDVI data before and after aggregation to LSOA resolution. Left panels show original high-resolution raster; right panels show aggregated values assigned to each LSOA polygon. Aggregation preserves broad spatial patterns while enabling consistent small-area analysis.</figcaption>
+</figure>
+
+### LSOA Aggregation Workflow
+
+<figure style="width: 100%; margin: 20px 0;">
+  <img src="figure/lsoa_aggregation_workflow.png" alt="Four-panel diagram explaining the LSOA aggregation process" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
+  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA 2021 administrative boundaries (6,888 areas in England). (Panel 3) Overlay showing how raster cells intersect with LSOA polygons. (Panel 4) Final aggregated values, one per LSOA. Raster cells are weighted by their intersection area with each LSOA polygon.</figcaption>
+</figure>
+
+### Original Static NDVI Maps
+
+<figure style="width: 70%; max-width: 700px; margin: 20px auto;">
   <table role="presentation" style="width: 100%; border-collapse: collapse; table-layout: fixed;">
     <tr>
       <td style="width: 50%; padding: 0 4px 0 0; vertical-align: top;">
@@ -19,7 +42,7 @@ The NDVI maps below are retained as example figures. The repository does not cur
       </td>
     </tr>
   </table>
-  <figcaption><strong>Example figures:</strong> NDVI maps for 2003 and 2020.</figcaption>
+  <figcaption><strong>Example figures:</strong> NDVI maps for 2003 (left) and 2020 (right) aggregated to LSOA boundaries.</figcaption>
 </figure>
 
 ## Repository layout
