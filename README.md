@@ -6,7 +6,7 @@ This project is part of the [CD3 Programme](https://www.cd3.org.uk/), which aims
 
 Several inputs are not measured on 2021 LSOA boundaries. Historical population counts are allocated using geographic area weights, and Fingertips LAD-level values are assigned to each LSOA in that LAD. These are derived or contextual values, not independently estimated small-area measurements.
 
-The NDVI maps below are retained as example figures showing normalized difference vegetation index (NDVI) aggregated to LSOA boundaries. The repository does not currently include a workflow to produce them; the Python helper joins an existing NDVI summary table to administrative polygons.
+The NDVI maps below are retained as example figures showing normalized difference vegetation index (NDVI) aggregated to LSOA boundaries. The repository does not include a data-processing workflow to produce the maps; the aggregation diagram can be regenerated with [`figure/lsoa_aggregation_workflow.py`](figure/lsoa_aggregation_workflow.py), which uses synthetic values for illustration. The Python helper joins an existing NDVI summary table to administrative polygons.
 
 ### Animated NDVI Time Series (2003–2020)
 
