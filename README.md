@@ -19,7 +19,7 @@ The NDVI maps below are retained as example figures showing normalized differenc
 
 <figure style="width: 100%; margin: 20px 0;">
   <img src="figure/lsoa_aggregation_workflow.png" alt="Four-panel diagram explaining the LSOA aggregation process" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
-  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA 2021 administrative boundaries (6,888 areas in England). (Panel 3) Overlay showing how raster cells intersect with LSOA polygons. (Panel 4) Final aggregated values, one per LSOA. Raster cells are weighted by their intersection area with each LSOA polygon.</figcaption>
+  <figcaption><strong>Figure 2:</strong> LSOA aggregation workflow. (Panel 1) Raw raster data with continuous spatial variation. (Panel 2) LSOA 2021 administrative boundaries (33,755 areas in England). (Panel 3) Overlay showing how raster cells intersect with LSOA polygons. (Panel 4) Final aggregated values, one per LSOA. Raster cells are weighted by their intersection area with each LSOA polygon.</figcaption>
 </figure>
 
 ## Repository layout
