@@ -14,14 +14,14 @@ The NDVI maps below are retained as example figures showing normalized differenc
   <img src="figure/ndvi_animation.gif" alt="Animated NDVI maps showing vegetation change from 2003 to 2020" style="width: 50%; height: auto; display: block; border: 1px solid #ddd;">
   <figcaption><strong>Animation:</strong> Normalized Difference Vegetation Index (NDVI) aggregated to LSOA boundaries, 2003–2020. Loop duration: 1 second per frame.</figcaption>
 </figure>
-
+<!--
 ### LSOA Aggregation Workflow
-
+```figure
 <figure style="width: 100%; margin: 20px 0;">
   <img src="figure/lsoa_aggregation_workflow.png" alt="Four-panel diagram showing area-weighted aggregation of a 0.05° NDVI raster to 2021 LSOA boundaries" style="width: 100%; height: auto; display: block; border: 1px solid #ddd;">
   <figcaption><strong>Figure 2:</strong> Area-weighted raster aggregation workflow for NDVI to 2021 LSOA boundaries. <strong>Top row:</strong> (Panel 1) Raw NDVI raster (0.05° resolution, range 0–1); (Panel 2) Target 2021 LSOA boundaries (33,755 areas in England). <strong>Bottom row:</strong> (Panel 3) Aggregation process showing raster cells overlaid on LSOA polygons; (Panel 4) Final aggregated NDVI values per LSOA. For each LSOA, compute the weighted mean of all intersecting raster cells, with weight = intersection_area / LSOA_area. <strong>Population harmonisation example:</strong> Areas 01 and 02 illustrate two separate 2021 LSOAs that together formed a single LSOA in 2011. To align historical population counts to the 2021 boundaries, allocate the population of that 2011 LSOA to areas 01 and 02 in proportion to their intersection areas with the source LSOA: population allocated to each 2021 LSOA = source 2011 LSOA population × (intersection_area / source_2011_LSOA_area). This assumes a uniform population distribution within the 2011 LSOA and preserves its total population across the two areas. This workflow uses Python (<code>matplotlib</code>, <code>geopandas</code>); refer to <a href="lsoa11221.py"><code>lsoa11221.py</code></a>, <a href="pop.py"><code>pop.py</code></a>, and <a href="air_extract.py"><code>air_extract.py</code></a> for implementation examples.</figcaption>
 </figure>
-
+-->
 **Aggregation methodology:** The main workflow applies area-weighted aggregation directly to raster data:
 - For each LSOA polygon, compute the weighted mean of all raster cells that intersect it
 - Weight each cell by its intersection area with the LSOA
