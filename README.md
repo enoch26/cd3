@@ -8,7 +8,7 @@ Several inputs are not measured on 2021 LSOA boundaries. Historical population c
 
 The NDVI maps below are retained as example figures showing normalized difference vegetation index (NDVI) aggregated to LSOA boundaries. The repository does not include a data-processing workflow to produce the maps; the aggregation diagram can be regenerated with [`figure/lsoa_aggregation_workflow.py`](figure/lsoa_aggregation_workflow.py), which uses synthetic values for illustration. The Python helper joins an existing NDVI summary table to administrative polygons.
 
-### Animated NDVI Time Series (2003–2020)
+### Animated NDVI (LTDR v5-AVHRR (via GeoQuery)) Time Series (2003–2020)
 
 <figure style="width: 50%; max-width: 400px; margin: 20px auto;">
   <img src="figure/ndvi_animation.gif" alt="Animated NDVI maps showing vegetation change from 2003 to 2020" style="width: 50%; height: auto; display: block; border: 1px solid #ddd;">
