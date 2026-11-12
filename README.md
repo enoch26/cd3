@@ -12,7 +12,7 @@ The NDVI maps below are retained as example figures showing normalized differenc
 
 <figure style="width: 50%; max-width: 400px; margin: 20px auto;">
   <img src="figure/ndvi_animation.gif" alt="Animated NDVI maps showing vegetation change from 2003 to 2020" style="width: 50%; height: auto; display: block; border: 1px solid #ddd;">
-  <figcaption><strong>Animation:</strong> Normalized Difference Vegetation Index (NDVI) aggregated to LSOA boundaries, 2003–2020. Loop duration: 1 second per frame.</figcaption>
+  <figcaption><strong>Animation:</strong> Normalized Difference Vegetation Index (NDVI; LTDR v5-AVHRR (via GeoQuery)) aggregated to LSOA boundaries, 2003–2020. Loop duration: 1 second per frame.</figcaption>
 </figure>
 <!--
 ### LSOA Aggregation Workflow
